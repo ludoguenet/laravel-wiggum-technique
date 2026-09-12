@@ -1,6 +1,14 @@
 # Spec: 3 Team Features
 
-Re-read this file every pass. It does not change between iterations — you do. Stop only when every acceptance criterion below is met and the full test suite is green.
+Re-read this file every pass. Work on exactly **one unchecked task** per pass, then check it off below — this checklist, not just a green test run, is what tells the loop whether to stop.
+
+## Progress checklist
+
+- [ ] Feature 1 — Rename team
+- [ ] Feature 2 — Leave team
+- [ ] Feature 3 — Cancel pending invitation
+
+Check a box only after that feature's acceptance test passes and the full suite is green. Never check a box preemptively, and never uncheck one that's already done.
 
 ## Feature 1 — Rename team
 
@@ -48,3 +56,4 @@ Re-read this file every pass. It does not change between iterations — you do. 
 - Do not edit, weaken, or delete any existing test in `tests/Feature` or `tests/Unit`. Only add new tests.
 - Do not touch files outside `app/`, `routes/web.php`, `tests/Feature`, and (only if strictly required) `resources/views/teams` or `resources/views/invitations`.
 - Run `vendor/bin/pest --compact` after every change. A feature is not done until its acceptance test passes and the rest of the suite is still green.
+- Commit your work for the task you just completed before finishing the pass, with a clear, scoped commit message. One task per commit — do not batch multiple features into one commit.
