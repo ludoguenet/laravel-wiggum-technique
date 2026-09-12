@@ -1,0 +1,106 @@
+[
+  {
+    "id": "F-2026-0001",
+    "rule_id": "AUD-SEC-003",
+    "title": "Every registered user's name and email is exposed to any authenticated user via the team invite dropdown",
+    "domain": "security",
+    "severity": "medium",
+    "confidence": "confirmed",
+    "status": "open",
+    "summary": "TeamController@show loads every user in the system who is not already a member of the current team, with no scoping to contacts, invited users, or any relationship to the inviter, and the view renders each one's name and email address in a plain <select> dropdown.",
+    "why_it_matters": "Registration is open (App\\Http\\Controllers\\Auth\\RegisteredUserController::store) and creating a team is unrestricted (App\\Policies\\TeamPolicy::create always returns true, and the creator is auto-attached as a member in TeamController::store). This means any signed-up user can create a throwaway team and immediately view the name + email address of every other user in the application, with zero relationship to those users. This is a full user-directory / email-harvesting oracle reachable by any authenticated account.",
+    "evidence": [
+      {"type": "file", "reference": "app/Http/Controllers/TeamController.php", "line": 71, "detail": "User::whereNotIn('id', $team->users->pluck('id'))->orderBy('name')->get() has no scoping beyond team membership"},
+      {"type": "file", "reference": "resources/views/teams/show.blade.php", "line": 29, "end_line": 31, "detail": "foreach renders {{ $user->name }} ({{ $user->email }}) for every invitable user"},
+      {"type": "file", "reference": "app/Policies/TeamPolicy.php", "line": 21, "end_line": 24, "detail": "create() always returns true, so any user can create a team and become its owner"},
+      {"type": "file", "reference": "app/Http/Controllers/TeamController.php", "line": 39, "end_line": 53, "detail": "store() auto-attaches the creator as owner and member, immediately unlocking canInviteMembers"}
+    ],
+    "affected_resources": [
+      "app/Http/Controllers/TeamController.php",
+      "resources/views/teams/show.blade.php"
+    ],
+    "recommendation": "Scope the invitable-users query to something bounded and relevant (e.g. an explicit email lookup/search endpoint that returns at most one exact match, or a prior-contact list), rather than dumping the full user table. At minimum, do not render email addresses of users who have no relationship to the inviter.",
+    "remediation": "Replace the whereNotIn(...)->get() list with a search-by-email endpoint (POST/GET with a single 'email' parameter, exact match only) invoked from the invite form, so the response never contains more than the one user being looked up.",
+    "verification_notes": "Confirmed by reading TeamController::show, TeamPolicy::create, and teams/show.blade.php directly; traced the full reachability path from open registration through team creation to the unscoped user list. Not exploited against a running instance, but the code path requires no special preconditions.",
+    "metadata": {"priority": "p1"}
+  },
+  {
+    "id": "F-2026-0002",
+    "rule_id": "AUD-SEC-008",
+    "title": "Team-invitation validation runs and can leak team-membership state before the authorization check",
+    "domain": "security",
+    "severity": "medium",
+    "confidence": "confirmed",
+    "status": "open",
+    "summary": "TeamInvitationController::store type-hints StoreTeamInvitationRequest, whose validation rules query team membership and pending-invitation state for the target team. Laravel resolves and validates the FormRequest before the controller body executes, so this validation runs before the explicit Gate::authorize('inviteMember', $team) call inside the method. The route itself only requires 'auth' middleware, not team membership, so any authenticated user can hit this endpoint for any team ID.",
+    "why_it_matters": "An authenticated user who is not a member of a given team can POST /teams/{team}/invitations for that team and, from the resulting validation error (assertSessionHasErrors path), learn whether a given user_id already exists, is already a member of that team, or already has a pending invitation to it — all before the 403 from Gate::authorize would ever be reached. This turns an endpoint meant to be owner-only into a membership-state oracle for outsiders.",
+    "evidence": [
+      {"type": "route", "reference": "POST /teams/{team}/invitations", "detail": "routes/web.php:24,35-36 — sits only inside the 'auth' middleware group, with no team-scoping middleware"},
+      {"type": "file", "reference": "app/Http/Controllers/TeamInvitationController.php", "line": 17, "end_line": 19, "detail": "Gate::authorize('inviteMember', $team) is called inside the method body, after StoreTeamInvitationRequest has already been resolved and validated"},
+      {"type": "file", "reference": "app/Http/Requests/StoreTeamInvitationRequest.php", "line": 16, "end_line": 19, "detail": "authorize() unconditionally returns true, so FormRequest-level authorization defers entirely to the later manual Gate call"},
+      {"type": "file", "reference": "app/Http/Requests/StoreTeamInvitationRequest.php", "line": 42, "end_line": 53, "detail": "validation rule queries $team->users()->whereKey($value)->exists() and TeamInvitation::where(...)->exists(), leaking membership/invitation state via session errors regardless of who is asking"},
+      {"type": "test", "reference": "tests/Feature/TeamInvitationTest.php", "line": 38, "end_line": 51, "detail": "the existing 'non-owner' test only covers a user who is already a team member; no test exercises a user with no relationship to the team at all"}
+    ],
+    "affected_resources": [
+      "app/Http/Controllers/TeamInvitationController.php",
+      "app/Http/Requests/StoreTeamInvitationRequest.php",
+      "routes/web.php"
+    ],
+    "recommendation": "Perform the Gate::authorize('inviteMember', $team) check before the FormRequest's validation rules can run — e.g. by checking authorization in the FormRequest's own authorize() method (returning false denies with a 403 before rules() executes), or by moving the team-membership check into route model binding / middleware ahead of validation.",
+    "remediation": "Change StoreTeamInvitationRequest::authorize() to `return Gate::allows('inviteMember', $this->route('team'));` and drop the manual Gate::authorize call from the controller, so an unauthorized requester is rejected before any validation rule touches team data.",
+    "verification_notes": "Confirmed via code reading of the controller, form request, and route file, and cross-checked against Laravel's documented FormRequest resolution order (validated when resolved from the container, i.e. before the controller method body runs). Not run against a live request, but the mechanism is deterministic framework behavior, not a runtime-dependent assumption.",
+    "metadata": {"priority": "p1"}
+  },
+  {
+    "id": "F-2026-0003",
+    "rule_id": "AUD-DSA-001",
+    "title": "No database constraint backs the \"one pending invitation per team/invitee\" rule, allowing duplicate pending invitations under concurrent requests",
+    "domain": "database",
+    "severity": "low",
+    "confidence": "high",
+    "status": "open",
+    "summary": "The uniqueness of a pending team invitation (one per team_id + invitee_id while status is pending) is enforced only by an existence check inside StoreTeamInvitationRequest's validation closure, at the time the request is validated. The team_invitations table carries no unique index over (team_id, invitee_id) or (team_id, invitee_id, status), so two concurrent POSTs from the same owner (or two owners, if ownership were ever shared) can both pass validation before either insert lands, producing two pending invitation rows for the same user/team pair.",
+    "why_it_matters": "This is a classic check-then-act race: the invariant the app relies on (\"at most one pending invitation per team/invitee\") lives only in application code, not storage. It won't corrupt team membership (team_user has a genuine unique(['team_id','user_id']) constraint, and accept() uses syncWithoutDetaching), but it does leave orphaned duplicate pending invitations behind — one gets accepted/declined, the other stays permanently pending with no way to reach it again through the normal accept/decline flow once the first is resolved, since InvitationController never re-validates against sibling rows.",
+    "evidence": [
+      {"type": "migration", "reference": "database/migrations/2026_08_28_152838_create_team_invitations_table.php", "detail": "lines 15-22 — no unique() index is defined on team_invitations"},
+      {"type": "other", "reference": "database-schema (MCP) team_invitations.indexes", "detail": "only {\"primary\": {\"columns\": [\"id\"]}} — no secondary or unique index"},
+      {"type": "file", "reference": "app/Http/Requests/StoreTeamInvitationRequest.php", "line": 48, "end_line": 53, "detail": "the only guard against duplicates is a TeamInvitation::where(...)->exists() check performed at validation time, not inside the later create() transaction"},
+      {"type": "file", "reference": "app/Http/Controllers/TeamInvitationController.php", "line": 21, "end_line": 26, "detail": "TeamInvitation::create(...) runs with no additional uniqueness check or database-level constraint between validation and insert"},
+      {"type": "test", "reference": "tests/Feature/TeamInvitationTest.php", "line": 77, "end_line": 94, "detail": "the existing duplicate-invitation test only covers a pre-existing row before the request starts; it does not (and via a single test process cannot) exercise two genuinely concurrent requests"}
+    ],
+    "affected_resources": [
+      "database/migrations/2026_08_28_152838_create_team_invitations_table.php",
+      "app/Http/Requests/StoreTeamInvitationRequest.php",
+      "app/Http/Controllers/TeamInvitationController.php"
+    ],
+    "recommendation": "Add a partial/composite unique index at the database level for the pending-invitation invariant (e.g. unique(team_id, invitee_id) if a team should only ever have one invitation record per invitee, or a unique index scoped to status='pending' if the database supports partial indexes), and catch the resulting constraint violation in the controller to surface it as a normal validation error.",
+    "remediation": "Add a migration with $table->unique(['team_id', 'invitee_id']) (or a partial unique index restricted to pending status, depending on whether declined/accepted history rows should be allowed to repeat), then wrap TeamInvitation::create() in a try/catch for the unique-constraint QueryException.",
+    "verification_notes": "Confirmed the absence of any secondary index via the database-schema MCP tool and the migration file. The race itself was not reproduced with actual concurrent requests (SQLite + single test process makes that impractical here); confidence is 'high' rather than 'confirmed' for the race dynamic specifically, though the missing constraint itself is directly confirmed.",
+    "metadata": {"priority": "p2"}
+  },
+  {
+    "id": "F-2026-0004",
+    "rule_id": "AUD-PER-003",
+    "title": "team_invitations has no index on invitee_id or team_id despite both being queried directly",
+    "domain": "database",
+    "severity": "low",
+    "confidence": "confirmed",
+    "status": "open",
+    "summary": "team_invitations only has a primary-key index. Both invitee_id (queried directly in InvitationController::index) and team_id (queried directly in StoreTeamInvitationRequest and implicitly via the team relationship) are used in WHERE clauses with no supporting index, relying on full table scans as the table grows.",
+    "why_it_matters": "At current data volumes this has no observable impact, but it's a foreign-key column doing lookup work without an index, which is the kind of gap that turns into a real cost as the invitations table grows across teams and users. Low severity given the app's current size, but cheap and safe to fix now via a migration.",
+    "evidence": [
+      {"type": "file", "reference": "app/Http/Controllers/InvitationController.php", "line": 21, "detail": "TeamInvitation::where('invitee_id', $request->user()->id)->with(['team', 'inviter'])->latest()->get()"},
+      {"type": "file", "reference": "app/Http/Requests/StoreTeamInvitationRequest.php", "line": 48, "end_line": 51, "detail": "TeamInvitation::where('team_id', $team->id)->where('invitee_id', $value)->where('status', ...)->exists()"},
+      {"type": "other", "reference": "database-schema (MCP) team_invitations.indexes", "detail": "only {\"primary\": {\"columns\": [\"id\"]}}; foreign_keys are declared but none are backed by a secondary index"}
+    ],
+    "affected_resources": [
+      "database/migrations/2026_08_28_152838_create_team_invitations_table.php",
+      "app/Http/Controllers/InvitationController.php",
+      "app/Http/Requests/StoreTeamInvitationRequest.php"
+    ],
+    "recommendation": "Add indexes on invitee_id (used standalone in InvitationController::index) and on (team_id, invitee_id, status) (which also serves finding F-2026-0003's uniqueness need if made a unique/partial index).",
+    "remediation": "Add a migration with $table->index('invitee_id') and either a composite index or the unique index proposed in F-2026-0003.",
+    "verification_notes": "Confirmed directly from the database-schema tool's index listing and the two call sites querying these columns.",
+    "metadata": {"priority": "p3"}
+  }
+]
