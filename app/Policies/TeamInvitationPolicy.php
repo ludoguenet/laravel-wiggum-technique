@@ -14,4 +14,12 @@ class TeamInvitationPolicy
     {
         return $invitation->invitee_id === $user->id;
     }
+
+    /**
+     * Determine whether the user can cancel the invitation.
+     */
+    public function cancel(User $user, TeamInvitation $invitation): bool
+    {
+        return $invitation->team->owner_id === $user->id;
+    }
 }

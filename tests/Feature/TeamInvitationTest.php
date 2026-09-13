@@ -257,3 +257,57 @@ it('does not allow a declined invitation to be accepted', function () {
             ->exists()
     )->toBeFalse();
 });
+
+it('allows the team owner to cancel a pending invitation', function () {
+    $invitee = User::factory()->create();
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $this->team->id,
+        'inviter_id' => $this->owner->id,
+        'invitee_id' => $invitee->id,
+        'status' => TeamInvitationStatus::Pending,
+    ]);
+
+    actingAs($this->owner)
+        ->delete("/teams/{$this->team->id}/invitations/{$invitation->id}")
+        ->assertRedirect();
+
+    expect(TeamInvitation::find($invitation->id))->toBeNull();
+});
+
+it('does not allow a non-owner to cancel an invitation', function () {
+    $member = User::factory()->create();
+    $invitee = User::factory()->create();
+
+    $this->team->users()->attach($member);
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $this->team->id,
+        'inviter_id' => $this->owner->id,
+        'invitee_id' => $invitee->id,
+        'status' => TeamInvitationStatus::Pending,
+    ]);
+
+    actingAs($member)
+        ->delete("/teams/{$this->team->id}/invitations/{$invitation->id}")
+        ->assertForbidden();
+
+    expect(TeamInvitation::find($invitation->id))->not->toBeNull();
+});
+
+it('does not allow the owner to cancel a non-pending invitation', function () {
+    $invitee = User::factory()->create();
+
+    $invitation = TeamInvitation::factory()->create([
+        'team_id' => $this->team->id,
+        'inviter_id' => $this->owner->id,
+        'invitee_id' => $invitee->id,
+        'status' => TeamInvitationStatus::Accepted,
+    ]);
+
+    actingAs($this->owner)
+        ->delete("/teams/{$this->team->id}/invitations/{$invitation->id}")
+        ->assertSessionHasErrors();
+
+    expect(TeamInvitation::find($invitation->id))->not->toBeNull();
+});

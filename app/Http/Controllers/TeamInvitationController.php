@@ -8,6 +8,7 @@ use App\Models\Team;
 use App\Models\TeamInvitation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Validation\ValidationException;
 
 class TeamInvitationController extends Controller
 {
@@ -24,6 +25,24 @@ class TeamInvitationController extends Controller
             'invitee_id' => (int) $request->validated('user_id'),
             'status' => TeamInvitationStatus::Pending,
         ]);
+
+        return redirect()->route('teams.show', $team);
+    }
+
+    /**
+     * Cancel the given pending team invitation.
+     */
+    public function destroy(Team $team, TeamInvitation $invitation): RedirectResponse
+    {
+        Gate::authorize('cancel', $invitation);
+
+        if ($invitation->status !== TeamInvitationStatus::Pending) {
+            throw ValidationException::withMessages([
+                'status' => 'This invitation is no longer pending.',
+            ]);
+        }
+
+        $invitation->delete();
 
         return redirect()->route('teams.show', $team);
     }

@@ -38,6 +38,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/teams/{team}/invitations', [TeamInvitationController::class, 'store'])
         ->name('teams.invitations.store');
 
+    Route::delete('/teams/{team}/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])
+        ->name('teams.invitations.destroy');
+
     Route::get('/invitations', [InvitationController::class, 'index'])->name('invitations.index');
     Route::post('/invitations/{invitation}/accept', [InvitationController::class, 'accept'])->name('invitations.accept');
     Route::post('/invitations/{invitation}/decline', [InvitationController::class, 'decline'])->name('invitations.decline');
