@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\TeamInvitationStatus;
 use App\Http\Requests\StoreTeamRequest;
 use App\Http\Requests\UpdateTeamRequest;
 use App\Models\Team;
@@ -63,13 +64,19 @@ class TeamController extends Controller
         $team->load(['owner', 'users']);
 
         $canInviteMembers = Gate::allows('inviteMember', $team);
+        $canUpdate = Gate::allows('update', $team);
 
         return view('teams.show', [
             'team' => $team,
             'canRemoveMembers' => Gate::allows('removeMember', $team),
             'canInviteMembers' => $canInviteMembers,
+            'canUpdate' => $canUpdate,
+            'canLeave' => Gate::allows('leave', $team) && ! $canUpdate,
             'invitableUsers' => $canInviteMembers
                 ? User::whereNotIn('id', $team->users->pluck('id'))->orderBy('name')->get()
+                : collect(),
+            'pendingInvitations' => $canUpdate
+                ? $team->invitations()->where('status', TeamInvitationStatus::Pending)->with('invitee')->get()
                 : collect(),
         ]);
     }
