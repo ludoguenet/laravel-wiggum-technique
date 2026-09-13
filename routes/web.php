@@ -27,7 +27,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
     Route::resource('teams', TeamController::class)
-        ->only(['index', 'create', 'store', 'show']);
+        ->only(['index', 'create', 'store', 'show', 'update']);
 
     Route::delete('/teams/{team}/members/{user}', [TeamMemberController::class, 'destroy'])
         ->name('teams.members.destroy');

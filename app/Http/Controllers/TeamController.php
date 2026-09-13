@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreTeamRequest;
+use App\Http\Requests\UpdateTeamRequest;
 use App\Models\Team;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -71,5 +72,19 @@ class TeamController extends Controller
                 ? User::whereNotIn('id', $team->users->pluck('id'))->orderBy('name')->get()
                 : collect(),
         ]);
+    }
+
+    /**
+     * Update the given team's name.
+     */
+    public function update(UpdateTeamRequest $request, Team $team): RedirectResponse
+    {
+        Gate::authorize('update', $team);
+
+        $team->update([
+            'name' => $request->validated('name'),
+        ]);
+
+        return redirect()->route('teams.show', $team);
     }
 }
