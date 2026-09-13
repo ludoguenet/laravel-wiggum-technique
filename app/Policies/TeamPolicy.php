@@ -46,4 +46,12 @@ class TeamPolicy
     {
         return $team->owner_id === $user->id;
     }
+
+    /**
+     * Determine whether the user can leave the team.
+     */
+    public function leave(User $user, Team $team): bool
+    {
+        return $team->users()->whereKey($user->id)->exists();
+    }
 }

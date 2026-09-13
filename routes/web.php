@@ -32,6 +32,9 @@ Route::middleware('auth')->group(function () {
     Route::delete('/teams/{team}/members/{user}', [TeamMemberController::class, 'destroy'])
         ->name('teams.members.destroy');
 
+    Route::delete('/teams/{team}/leave', [TeamMemberController::class, 'leave'])
+        ->name('teams.leave');
+
     Route::post('/teams/{team}/invitations', [TeamInvitationController::class, 'store'])
         ->name('teams.invitations.store');
 

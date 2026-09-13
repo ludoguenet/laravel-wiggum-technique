@@ -2,6 +2,7 @@
 
 use App\Models\Team;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 
 test('team owner can remove a member', function () {
     $owner = User::factory()->create();
@@ -39,10 +40,44 @@ test('team owner cannot remove themselves', function () {
     expect($team->users()->whereKey($owner->id)->exists())->toBeTrue();
 });
 
+test('member can leave a team', function () {
+    $owner = User::factory()->create();
+    $member = User::factory()->create();
+    $team = Team::factory()->create(['owner_id' => $owner->id]);
+    $team->users()->attach([$owner->id, $member->id]);
+
+    $response = $this->actingAs($member)->delete(route('teams.leave', $team));
+
+    $response->assertRedirect(route('teams.index'));
+    expect($team->users()->whereKey($member->id)->exists())->toBeFalse();
+});
+
+test('team owner cannot leave their own team', function () {
+    $owner = User::factory()->create();
+    $team = Team::factory()->create(['owner_id' => $owner->id]);
+    $team->users()->attach($owner);
+
+    $response = $this->actingAs($owner)->delete(route('teams.leave', $team));
+
+    $response->assertSessionHasErrors('team');
+    expect($team->users()->whereKey($owner->id)->exists())->toBeTrue();
+});
+
+test('non-member cannot leave a team', function () {
+    $owner = User::factory()->create();
+    $outsider = User::factory()->create();
+    $team = Team::factory()->create(['owner_id' => $owner->id]);
+    $team->users()->attach($owner);
+
+    $response = $this->actingAs($outsider)->delete(route('teams.leave', $team));
+
+    $response->assertForbidden();
+});
+
 test('duplicate team membership is prevented', function () {
     $owner = User::factory()->create();
     $team = Team::factory()->create(['owner_id' => $owner->id]);
     $team->users()->attach($owner);
 
-    expect(fn () => $team->users()->attach($owner))->toThrow(Illuminate\Database\QueryException::class);
+    expect(fn () => $team->users()->attach($owner))->toThrow(QueryException::class);
 });

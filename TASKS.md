@@ -5,7 +5,7 @@ Re-read this file every pass. Work on exactly **one uncheck task** per task, the
 ## Progress checklist
 
 - [x] Feature 1 - Rename team
-- [] Feature 2 - Leave team
+- [x] Feature 2 - Leave team
 - [] Feature 3 - Cancel pending invitation
 
 Check a box only after feature's acceptance test passes and the full suite is green. Never check a box preemptively, and never uncheck one that's already one.
