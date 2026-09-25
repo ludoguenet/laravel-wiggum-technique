@@ -1,6 +1,8 @@
 <?php
 
 use App\Models\User;
+use Illuminate\Auth\Events\Lockout;
+use Illuminate\Support\Facades\Event;
 
 test('login screen can be rendered', function () {
     $response = $this->get('/login');
@@ -30,6 +32,27 @@ test('user cannot log in with incorrect password', function () {
 
     $response->assertSessionHasErrors('email');
     $this->assertGuest();
+});
+
+test('user is locked out after too many failed login attempts', function () {
+    Event::fake([Lockout::class]);
+    $user = User::factory()->create();
+
+    foreach (range(1, 5) as $attempt) {
+        $this->post('/login', [
+            'email' => $user->email,
+            'password' => 'wrong-password',
+        ]);
+    }
+
+    $response = $this->post('/login', [
+        'email' => $user->email,
+        'password' => 'password',
+    ]);
+
+    $response->assertSessionHasErrors('email');
+    $this->assertGuest();
+    Event::assertDispatched(Lockout::class);
 });
 
 test('authenticated user can log out', function () {
