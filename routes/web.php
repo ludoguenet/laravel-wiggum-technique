@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\BookController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\TeamController;
@@ -40,6 +41,10 @@ Route::middleware('auth')->group(function () {
 
     Route::delete('/teams/{team}/invitations/{invitation}', [TeamInvitationController::class, 'destroy'])
         ->name('teams.invitations.destroy');
+
+    Route::get('/books', [BookController::class, 'getBooks']);
+    Route::post('/books', [BookController::class, 'store']);
+    Route::delete('/books/{id}', [BookController::class, 'destroy']);
 
     Route::get('/invitations', [InvitationController::class, 'index'])->name('invitations.index');
     Route::post('/invitations/{invitation}/accept', [InvitationController::class, 'accept'])->name('invitations.accept');
