@@ -4,7 +4,10 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\BookController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\DemoCallbackController;
+use App\Http\Controllers\DocsAssistantController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\OrderAssistantController;
 use App\Http\Controllers\TeamController;
 use App\Http\Controllers\TeamInvitationController;
 use App\Http\Controllers\TeamMemberController;
@@ -13,6 +16,8 @@ use Illuminate\Support\Facades\Route;
 Route::get('/', function () {
     return view('welcome');
 });
+
+Route::get('/demo/callback', DemoCallbackController::class)->name('demo.callback');
 
 Route::middleware('guest')->group(function () {
     Route::get('/register', [RegisteredUserController::class, 'create'])->name('register');
@@ -49,4 +54,10 @@ Route::middleware('auth')->group(function () {
     Route::get('/invitations', [InvitationController::class, 'index'])->name('invitations.index');
     Route::post('/invitations/{invitation}/accept', [InvitationController::class, 'accept'])->name('invitations.accept');
     Route::post('/invitations/{invitation}/decline', [InvitationController::class, 'decline'])->name('invitations.decline');
+
+    Route::get('/demo/orders', [OrderAssistantController::class, 'show'])->name('demo.orders');
+    Route::post('/demo/orders', [OrderAssistantController::class, 'ask'])->name('demo.orders.ask');
+
+    Route::get('/demo/docs', [DocsAssistantController::class, 'show'])->name('demo.docs');
+    Route::post('/demo/docs', [DocsAssistantController::class, 'ask'])->name('demo.docs.ask');
 });
