@@ -1,5 +1,6 @@
 <?php
 
+use App\Ai\Agents\SupportAgent;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\DashboardController;
@@ -45,3 +46,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/invitations/{invitation}/accept', [InvitationController::class, 'accept'])->name('invitations.accept');
     Route::post('/invitations/{invitation}/decline', [InvitationController::class, 'decline'])->name('invitations.decline');
 });
+
+Route::get('prompt', function () {
+    $response = (new SupportAgent)->prompt('Hello, I bought a product 45 days ago. Can I get a refund?');
+
+    dd($response);
+
+    });
