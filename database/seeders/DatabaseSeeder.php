@@ -48,5 +48,16 @@ class DatabaseSeeder extends Seeder
             'owner_id' => $bob->id,
         ]);
         $design->users()->attach([$bob->id, $charlie->id]);
+
+        User::factory()->admin()->create([
+            'name' => 'Admin',
+            'email' => 'admin@example.com',
+        ]);
+
+        $this->call([
+            OrderSeeder::class,
+            DocumentSeeder::class,
+            HelpdeskSeeder::class,
+        ]);
     }
 }

@@ -36,6 +36,18 @@
                         >
                             Invitations
                         </a>
+                        <a
+                            href="{{ route('demo.orders') }}"
+                            class="{{ request()->routeIs('demo.orders*') ? 'text-slate-900' : 'text-slate-500 hover:text-slate-900' }}"
+                        >
+                            Demo 1 · Orders
+                        </a>
+                        <a
+                            href="{{ route('demo.docs') }}"
+                            class="{{ request()->routeIs('demo.docs*') ? 'text-slate-900' : 'text-slate-500 hover:text-slate-900' }}"
+                        >
+                            Demo 2 · Docs
+                        </a>
                     </nav>
                 </div>
 

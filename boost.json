@@ -1,7 +1,6 @@
 {
     "agents": [
-        "claude_code",
-        "zed"
+        "claude_code"
     ],
     "cloud": false,
     "guidelines": true,
@@ -13,6 +12,7 @@
     "sail": false,
     "skills": [
         "infer-conventions",
+        "ai-sdk-development",
         "laravel-best-practices",
         "testing-best-practices",
         "tailwindcss-development",
@@ -24,6 +24,7 @@
         "laravel-audit-performance",
         "laravel-audit-security",
         "laravel-audit-testing",
-        "laravel-auditor-development"
+        "laravel-auditor-development",
+        "add-interchangeable-provider"
     ]
 }
