@@ -57,6 +57,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             OrderSeeder::class,
             DocumentSeeder::class,
+            HelpdeskSeeder::class,
         ]);
     }
 }
