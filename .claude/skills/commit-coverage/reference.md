@@ -1,4 +1,5 @@
 # Coverage report format
+
 The `coverage.php`script produces a summary per file with:
 - Name of the modified file
 - % of covered lines

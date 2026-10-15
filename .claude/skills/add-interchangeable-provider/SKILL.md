@@ -11,7 +11,7 @@ Implement a new provider without coupling consumers to its concrete implementati
 
 ## Reference
 
-Read `docs/engineering/02-domain-modules.md` first. It contains the worked CAPTCHA example (contract, drivers, configuration binding, fail-closed behavior and contract tests) that this procedure follows.
+Read `references/02-domain-modules.md` from the `engineering-standards` skill first. It contains the worked CAPTCHA example (contract, drivers, configuration binding, fail-closed behavior and contract tests) that this procedure follows.
 
 ## Procedure
 

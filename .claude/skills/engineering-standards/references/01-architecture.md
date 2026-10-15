@@ -10,9 +10,10 @@
 - [Avoiding Circular and Cross-Module Dependencies](#cross-module)
 
 <a name="introduction"></a>
+
 ## Introduction
 
-This document expands section 3 ("Architecture") of the [engineering standards](../../.ai/guidelines/engineering-standards.md). It describes how code is split between layers, where business logic lives, which way dependencies point, and how much structure a feature should get before it is worth adding more.
+This document expands section 3 ("Architecture") of the engineering standards (the `engineering-standards` guideline in `CLAUDE.md`). It describes how code is split between layers, where business logic lives, which way dependencies point, and how much structure a feature should get before it is worth adding more.
 
 The application is a Laravel 13 monolith on PHP 8.5. The default `app/` layout (`Http/Controllers`, `Http/Requests`, `Models`, `Policies`, `Providers`, `Enums`, `Support`, `Ai`, `Console`) is the baseline. New folders such as `app/Actions` or `app/Modules/<Name>` are added when a feature needs them, not ahead of time.
 
@@ -24,14 +25,17 @@ Related documents:
 - [Testing](07-testing.md): how each layer is tested.
 
 <a name="layers"></a>
+
 ## Layers and Responsibilities
 
 <a name="layers-principle"></a>
+
 ### Principle
 
 Every piece of code belongs to one of four concerns: HTTP (input, authorization and output), application orchestration (running one use case), domain rules (business invariants), and infrastructure (database, queues, external APIs). Keep these concerns apart once a feature is complex enough that mixing them hides the business rule.
 
 <a name="layers-why-it-exists"></a>
+
 ### Why It Exists
 
 When a controller validates input, checks ownership, computes a refund, writes three tables and calls a payment API all in one method, nothing else can reuse that logic. An Artisan command, a queued job or an AI tool that needs the same refund ends up copying the method and leaving out a check, often the authorization or the "already refunded" guard. Separate layers give each rule one home.
@@ -47,6 +51,7 @@ Here is how the layers map to Laravel building blocks:
 | Infrastructure | Eloquent queries, `Http` client, `Cache`, queue drivers, provider adapters | How data is stored and fetched |
 
 <a name="layers-when-to-apply"></a>
+
 ### When To Apply
 
 - The same use case can start from more than one place: a controller, a command, a job, or an AI tool in `app/Ai/Tools`.
@@ -55,6 +60,7 @@ Here is how the layers map to Laravel building blocks:
 - A business rule is complex enough that it needs its own unit tests.
 
 <a name="layers-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Plain CRUD where the "business rule" is just validation. A controller with a Form Request, `Model::create($request->validated())` and a Resource is already layered enough.
@@ -64,6 +70,7 @@ Here is how the layers map to Laravel building blocks:
 Splitting a 5-line method into a controller, an action, a service and a repository adds files without adding clarity.
 
 <a name="layers-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -89,6 +96,7 @@ class InvoiceRefundController extends Controller
 The controller does only HTTP work and authorization. The refund rules and the transaction live in `IssueInvoiceRefund` (see [Actions Versus Services](#actions-vs-services)).
 
 <a name="layers-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -108,6 +116,7 @@ public function refund(Request $request, $id)
 This method has no authorization, so any user can refund any invoice. It has no lock, so two concurrent requests can both refund. It makes a network call with no timeout and no failure handling. It returns the raw model, which includes the IBAN. None of it can be reused by a command or job without copying.
 
 <a name="layers-checklist"></a>
+
 ### Checklist
 
 - [ ] Each sensitive operation has exactly one server-side authorization point (Policy or Gate).
@@ -117,19 +126,23 @@ This method has no authorization, so any user can refund any invoice. It has no 
 - [ ] Plain CRUD was not split into extra layers without a reason.
 
 <a name="thin-controllers"></a>
+
 ## Thin Controllers
 
 <a name="thin-controllers-principle"></a>
+
 ### Principle
 
 A controller translates an HTTP request into a call to application code and turns the result into an HTTP response. It validates through a Form Request, authorizes through a Policy, delegates the use case, and formats the output. It does not hold business rules.
 
 <a name="thin-controllers-why-it-exists"></a>
+
 ### Why It Exists
 
 Fat controllers cause three concrete problems. Their logic can only be tested through HTTP. Their rules are copied when another entry point needs them: this project already has AI tools (`app/Ai/Tools/RefundInvoice.php`) and console commands that act on the same models. And reviewers cannot see an authorization gap that is buried in the middle of 80 lines of mixed concerns.
 
 <a name="thin-controllers-when-to-apply"></a>
+
 ### When To Apply
 
 - Any controller method that changes state beyond a single validated `create`/`update`.
@@ -137,6 +150,7 @@ Fat controllers cause three concrete problems. Their logic can only be tested th
 - Any logic that a second entry point (command, job, AI tool, webhook) needs now.
 
 <a name="thin-controllers-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Simple resource controllers. `store()` that validates, creates and redirects is fine inline:
@@ -153,6 +167,7 @@ public function store(StoreTeamRequest $request): RedirectResponse
 - Query composition for one specific page (filters, eager loading, pagination). Unless the same query is reused, it can stay in the controller or move to a model scope. It does not need an action.
 
 <a name="thin-controllers-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -176,6 +191,7 @@ class TeamInvitationController extends Controller
 Validation is in the Form Request and authorization is in the Policy. Rules like "no duplicate pending invitation" and "notify the invitee" live in the action, where a test can call them directly.
 
 <a name="thin-controllers-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -201,6 +217,7 @@ public function store(Request $request, Team $team): RedirectResponse
 Authorization is done inline instead of in `TeamPolicy`, so it drifts from the policy. `$request->all()` mass-assigns untrusted input. The duplicate check is a check-then-insert race with no unique constraint behind it. The mail is sent synchronously inside the request.
 
 <a name="thin-controllers-checklist"></a>
+
 ### Checklist
 
 - [ ] Input comes from a Form Request (`$request->validated()`, `$request->safe()`), never `$request->all()`.
@@ -210,19 +227,23 @@ Authorization is done inline instead of in `TeamPolicy`, so it drifts from the p
 - [ ] The response is a redirect, a view or an API Resource.
 
 <a name="actions-vs-services"></a>
+
 ## Actions Versus Services
 
 <a name="actions-vs-services-principle"></a>
+
 ### Principle
 
 An **action** is a plain class in `app/Actions/<Area>` with one public `handle()` method that runs one use case, for example `IssueInvoiceRefund` or `InviteTeamMember`. A **service** is a class that groups related operations around one capability or integration, for example a payment gateway client or a pricing calculator. Default to actions for use cases. Use services for reusable capabilities that several actions share.
 
 <a name="actions-vs-services-why-it-exists"></a>
+
 ### Why It Exists
 
 Unscoped `InvoiceService` classes grow into 1,500-line god objects that need ten constructor dependencies to call one method. They mix unrelated use cases, and their tests need heavy mocking. One action per use case keeps dependencies explicit and lets each one be tested on its own. Services still exist, but for real shared capabilities, not as a dumping ground.
 
 <a name="actions-vs-services-when-to-apply"></a>
+
 ### When To Apply
 
 Use an **action** when:
@@ -236,6 +257,7 @@ Use a **service** when:
 - The capability has internal state or configuration (credentials, base URL, timeout) that is resolved once from the container.
 
 <a name="actions-vs-services-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not create an action for a single `Model::create($validated)` call. The controller is fine.
@@ -244,6 +266,7 @@ Use a **service** when:
 - Do not make actions "smart" about their caller. If two entry points need different behavior, write two actions or pass an explicit parameter.
 
 <a name="actions-vs-services-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -278,6 +301,7 @@ class IssueInvoiceRefund
 The action owns the invariant (no double refund, enforced with a row lock) and the transaction boundary. The network call to the gateway runs in a job after commit, so it stays outside the transaction (see [Database and Concurrency](04-database-and-concurrency.md)).
 
 <a name="actions-vs-services-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -301,6 +325,7 @@ class InvoiceService
 Every caller depends on five collaborators even when it uses one of them. `refund()` takes a `Request`, so commands and jobs cannot call it. The class has no single reason to change, and its test setup has to mock everything.
 
 <a name="actions-vs-services-checklist"></a>
+
 ### Checklist
 
 - [ ] Each action has one public method (`handle()`) and a name that is a verb phrase for the use case.
@@ -311,19 +336,23 @@ Every caller depends on five collaborators even when it uses one of them. `refun
 - [ ] Each action has a feature or unit test that calls `handle()` directly.
 
 <a name="dependency-direction"></a>
+
 ## Dependency Direction and Contracts
 
 <a name="dependency-direction-principle"></a>
+
 ### Principle
 
 Dependencies point from volatile code to stable code: HTTP depends on application code, application code depends on domain code and contracts, and infrastructure implements those contracts. Domain and application code never import controllers, requests or concrete third-party SDKs. When consumers must stay independent of interchangeable implementations, they depend on an interface, and the service container binds the implementation.
 
 <a name="dependency-direction-why-it-exists"></a>
+
 ### Why It Exists
 
 If an action calls a specific vendor's SDK directly, replacing the vendor or testing the action means editing every caller. If a model imports an HTTP Request, it cannot be used from a queue worker. Getting the direction right keeps the cost of change local: replacing a CAPTCHA provider touches one adapter and one config value, not every form.
 
 <a name="dependency-direction-when-to-apply"></a>
+
 ### When To Apply
 
 - There are two or more real implementations today (Turnstile and hCaptcha, Stripe and Mollie), or a test double is needed because the real one calls the network.
@@ -331,6 +360,7 @@ If an action calls a specific vendor's SDK directly, replacing the vendor or tes
 - A module exposes behavior to other modules and wants to hide how it works.
 
 <a name="dependency-direction-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - One implementation and no realistic second one. Inject the concrete class. The container auto-resolves it, and tests can still swap it with `$this->app->instance()` or `$this->mock()`.
@@ -338,6 +368,7 @@ If an action calls a specific vendor's SDK directly, replacing the vendor or tes
 - Eloquent models. They are the domain objects in a Laravel app. Do not hide them behind an interface.
 
 <a name="dependency-direction-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -367,6 +398,7 @@ public function handle(PaymentGateway $payments): void
 The job depends only on the contract. The provider is the single place that knows which concrete class exists, and an unknown driver fails loudly instead of falling back to something.
 
 <a name="dependency-direction-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -387,6 +419,7 @@ class InvoiceResource extends JsonResource
 The presentation layer depends on a vendor SDK. Serializing a collection makes one network call per row. `env()` returns `null` once config is cached. Tests cannot run without the network.
 
 <a name="dependency-direction-checklist"></a>
+
 ### Checklist
 
 - [ ] Actions, jobs and models never import `Illuminate\Http\Request` or controllers.
@@ -397,19 +430,23 @@ The presentation layer depends on a vendor SDK. Serializing a collection makes o
 - [ ] An architecture test enforces the most important direction rules (see [Avoiding Circular and Cross-Module Dependencies](#cross-module)).
 
 <a name="simplicity"></a>
+
 ## Simplicity Before Abstraction
 
 <a name="simplicity-principle"></a>
+
 ### Principle
 
 Add a repository, interface, factory, event bus or extra layer only when you can name the concrete problem it solves today. Otherwise use what Laravel already provides: Eloquent, the container, events, queues and the framework fakes.
 
 <a name="simplicity-why-it-exists"></a>
+
 ### Why It Exists
 
 Speculative abstraction is not free. Every `UserRepositoryInterface` that wraps `User::find()` adds a file, an indirection and a binding. It also hides useful Eloquent features (scopes, eager loading, `lockForUpdate()`) behind a lowest-common-denominator API. Teams then add `findWithRelations()`, `findForUpdate()` and so on until the repository is just Eloquent with a different name. Events used for in-process control flow hide the order of execution and make a failure in a listener look like it came from elsewhere.
 
 <a name="simplicity-when-to-apply"></a>
+
 ### When To Apply
 
 Here is a concrete justification for each abstraction:
@@ -423,6 +460,7 @@ Here is a concrete justification for each abstraction:
 | Extra layer / module | The feature's cohesion, size or variability meets the threshold in [Domain Modules](02-domain-modules.md). |
 
 <a name="simplicity-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - "We might switch databases someday." Eloquent and the query builder already abstract the driver.
@@ -431,6 +469,7 @@ Here is a concrete justification for each abstraction:
 - "It's Clean Architecture." Patterns follow from problems, not the other way around.
 
 <a name="simplicity-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -448,6 +487,7 @@ $invoices = Invoice::query()->overdue()->with('user')->lockForUpdate()->get();
 The `#[Scope]` attribute is the convention already used in `app/Models/Document.php`. It names the rule once and keeps eager loading and locking available.
 
 <a name="simplicity-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -467,6 +507,7 @@ class EloquentInvoiceRepository implements InvoiceRepositoryInterface
 There is one implementation, it adds no behavior, and it removes access to `lockForUpdate()` and eager loading. Callers still get Eloquent models back, so the "abstraction" leaks anyway.
 
 <a name="simplicity-checklist"></a>
+
 ### Checklist
 
 - [ ] Every new interface has two or more implementations, or a documented network-bound test need.
@@ -476,19 +517,23 @@ There is one implementation, it adds no behavior, and it removes access to `lock
 - [ ] The pull request description states the problem that justifies any new layer.
 
 <a name="modular-monolith"></a>
+
 ## Modular Monolith Over Microservices
 
 <a name="modular-monolith-principle"></a>
+
 ### Principle
 
 Build one deployable Laravel application with clear internal modules. Extract a separate service only when there is a measured, independent need for scaling, deployment, technology or ownership that the monolith cannot meet.
 
 <a name="modular-monolith-why-it-exists"></a>
+
 ### Why It Exists
 
 Microservices turn function calls into network calls, and every network call can time out, fail halfway or arrive twice. A refund that was one `DB::transaction()` becomes a distributed saga with compensations, retries and eventual consistency. That cost only pays off when teams or workloads really are independent. Without that need, a modular monolith gives most of the organizational benefit for none of the distributed-systems cost.
 
 <a name="modular-monolith-when-to-apply"></a>
+
 ### When To Apply
 
 Stay in the monolith (the default) when:
@@ -504,6 +549,7 @@ Consider extracting a service only when **at least one** of these is measured:
 - A separate team fully owns it, including its data, and the module boundary has already been stable inside the monolith.
 
 <a name="modular-monolith-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not split for "clean separation." Use modules and architecture tests for that.
@@ -511,6 +557,7 @@ Consider extracting a service only when **at least one** of these is measured:
 - Do not split before the boundary has proven stable as an internal module. A bad in-process boundary is cheap to move, but a bad network boundary is expensive.
 
 <a name="modular-monolith-correct-example"></a>
+
 ### Correct Example
 
 ```text
@@ -530,6 +577,7 @@ php artisan queue:work --queue=payments   # heavy work scales as separate worker
 Modules are folders with a small public surface inside one deployable application. Heavy background work scales through queue workers, not separate services.
 
 <a name="modular-monolith-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -544,6 +592,7 @@ if ($response->failed()) {
 A transactional operation now has an unknown outcome on timeout. It needs idempotency keys, retries and reconciliation, and nothing about the workload required any of that.
 
 <a name="modular-monolith-checklist"></a>
+
 ### Checklist
 
 - [ ] New features land as folders or modules inside the existing application.
@@ -552,25 +601,30 @@ A transactional operation now has an unknown outcome on timeout. It needs idempo
 - [ ] Background workloads use dedicated queues and workers before anyone considers a separate service.
 
 <a name="cross-module"></a>
+
 ## Avoiding Circular and Cross-Module Dependencies
 
 <a name="cross-module-principle"></a>
+
 ### Principle
 
 A module may use another module only through that module's public surface (contracts, actions, data objects, events it publishes). It must never use another module's internal classes, and two modules must never depend on each other. If two modules both need something, move it to a third, lower-level place or invert the dependency with a contract or event.
 
 <a name="cross-module-why-it-exists"></a>
+
 ### Why It Exists
 
 Cycles make modules impossible to change, test or extract on their own. If `Billing` calls `Teams\Internal\SeatCounter` and `Teams` calls `Billing\Internal\PlanLimits`, a change to either can break both, and neither can be loaded or tested alone. Cross-module access to internals also bypasses invariants the owning module enforces, such as authorization or locking.
 
 <a name="cross-module-when-to-apply"></a>
+
 ### When To Apply
 
 - As soon as `app/Modules/<Name>` exists (see [Domain Modules](02-domain-modules.md)).
 - For layer direction even without modules: `App\Models`, `App\Actions` and `App\Jobs` must not depend on `App\Http`.
 
 <a name="cross-module-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Shared framework-level code (`App\Models\User`, `App\Enums`, `App\Support`) is meant to be used everywhere. Treat it as the stable base layer, and keep it free of module-specific logic so it does not create hidden cycles.
@@ -578,6 +632,7 @@ Cycles make modules impossible to change, test or extract on their own. If `Bill
 - Do not invent a contract or event for a one-way dependency that is already acyclic. A plain call to a public action is fine.
 
 <a name="cross-module-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -598,6 +653,7 @@ arch('modules do not depend on each other cyclically')
 Pest architecture tests (`arch()`, `toUse()`, `not->toUse()`) turn the boundary rules into failing tests instead of review comments.
 
 <a name="cross-module-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -619,6 +675,7 @@ class AddTeamMember
 `Teams` depends on a `Billing` internal, and `Billing` depends back on `Teams`. Neither module can change on its own. The fix is a `Billing\Contracts\SeatQuota` contract that `Teams` consumes, with `Billing` reading seat counts through the public `Team` model rather than a `Teams` internal.
 
 <a name="cross-module-checklist"></a>
+
 ### Checklist
 
 - [ ] Every cross-module import targets a public class (contract, action, data object, event).

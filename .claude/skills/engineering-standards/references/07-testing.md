@@ -11,9 +11,10 @@
 - [Regression and Architecture Tests](#regression-and-architecture-tests)
 
 <a name="introduction"></a>
+
 ## Introduction
 
-This document explains how we design, write, and run automated tests. It expands section 11 of `.ai/guidelines/engineering-standards.md` and stays consistent with the `testing-best-practices` skill (`.claude/skills/testing-best-practices`). When this document and an established project convention disagree, the convention wins until the team decides otherwise.
+This document explains how we design, write, and run automated tests. It expands section 11 of the `engineering-standards` guideline and stays consistent with the `testing-best-practices` skill (installed by Boost). When this document and an established project convention disagree, the convention wins until the team decides otherwise.
 
 The suite uses Pest 5 with `pestphp/pest-plugin-laravel`. `tests/Pest.php` binds `Tests\TestCase` and `RefreshDatabase` to every file in `tests/Feature`, and `phpunit.xml` runs the suite against an in-memory SQLite database. Examples use the project's real models (`User`, `Invoice`, `Order`, `Team`) and factory states (`User::factory()->admin()`, `Invoice::factory()->refunded()`). Routes, actions, and contracts such as `PlaceOrder`, `PaymentGateway`, or `invoices.refund` are illustrative.
 
@@ -25,9 +26,11 @@ Related documents:
 - The other documents in this folder, `01-architecture.md` through `11-ai-assisted-development.md`.
 
 <a name="test-strategy"></a>
+
 ## Test Strategy
 
 <a name="test-strategy-principle"></a>
+
 ### Principle
 
 Test observable behavior and business invariants at the lowest boundary that can detect the defect. Choose the layer by boundary, not by habit:
@@ -40,11 +43,13 @@ Test observable behavior and business invariants at the lowest boundary that can
 | Browser / end-to-end | Real browser, JavaScript, and backend together | `tests/Browser` (not installed) |
 
 <a name="test-strategy-why-it-exists"></a>
+
 ### Why It Exists
 
 A suite that asserts implementation details breaks on every refactor and is eventually ignored. A suite that only covers the happy path passes while another customer's invoice leaks. Choosing the boundary deliberately gives fast tests that still fail for the right reason.
 
 <a name="test-strategy-when-to-apply"></a>
+
 ### When To Apply
 
 - Every behavior or logic change: identify each decision (branch, validation, calculation, authorization) and cover it.
@@ -52,6 +57,7 @@ A suite that asserts implementation details breaks on every refactor and is even
 - Logic that does not touch the framework (a price calculator, a parser): a unit test is enough.
 
 <a name="test-strategy-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Pure copy, styling, or layout-only changes do not need new tests.
@@ -59,6 +65,7 @@ A suite that asserts implementation details breaks on every refactor and is even
 - Real-browser tests require `pestphp/pest-plugin-browser` and Playwright, neither of which is installed. Adding them is a dependency change that needs approval; until then, cover the behavior with feature tests.
 
 <a name="test-strategy-correct-example"></a>
+
 ### Correct Example
 
 Run the narrowest set that covers the change, then ask for the full suite before merging:
@@ -73,6 +80,7 @@ php artisan test --compact         # full suite, before completion
 The file path and `--filter` keep the feedback loop short; the full run proves nothing else broke.
 
 <a name="test-strategy-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -87,6 +95,7 @@ test('refund calls the repository', function (): void {
 This asserts that a method was called, not that the invoice is refunded. It fails after a harmless refactor and passes when `markRefunded` is broken.
 
 <a name="test-strategy-checklist"></a>
+
 ### Checklist
 
 - [ ] Every changed decision (branch, validation, calculation, authorization) has a test.
@@ -96,19 +105,23 @@ This asserts that a method was called, not that the invoice is refunded. It fail
 - [ ] The narrow tests were run and passed; the full suite was run or its omission was disclosed.
 
 <a name="feature-tests-with-factories"></a>
+
 ## Feature Tests With Factories
 
 <a name="feature-tests-with-factories-principle"></a>
+
 ### Principle
 
 Build test data with model factories and their states, owned by the test that uses it. Act through the real entry point and assert both the response and the persisted state.
 
 <a name="feature-tests-with-factories-why-it-exists"></a>
+
 ### Why It Exists
 
 Hand-written `Model::create([...])` arrays drift from the schema and hide which attributes matter. Shared fixtures make tests depend on each other's data. Asserting only the status code lets a `200` response hide a write that never happened.
 
 <a name="feature-tests-with-factories-when-to-apply"></a>
+
 ### When To Apply
 
 - Any test that needs a model: use `Model::factory()`, relationships with `for()` / `has()`, and named states such as `admin()` or `refunded()`.
@@ -116,6 +129,7 @@ Hand-written `Model::create([...])` arrays drift from the schema and hide which 
 - When a state is needed in several files, add it to the factory instead of repeating attributes.
 
 <a name="feature-tests-with-factories-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A unit test of a pure value object needs no factory; construct it directly.
@@ -123,6 +137,7 @@ Hand-written `Model::create([...])` arrays drift from the schema and hide which 
 - Do not add a factory state for a combination used by a single test; inline attributes are clearer there.
 
 <a name="feature-tests-with-factories-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -143,6 +158,7 @@ test('a customer can refund their own invoice', function (): void {
 The factory states the ownership explicitly, and the test asserts the persisted outcome, not just the redirect.
 
 <a name="feature-tests-with-factories-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -158,6 +174,7 @@ test('refund works', function (): void {
 The test depends on seeder contents and auto-increment IDs, uses a hard-coded URL, and never checks that the invoice was refunded.
 
 <a name="feature-tests-with-factories-checklist"></a>
+
 ### Checklist
 
 - [ ] Models come from factories; existing states are reused before adding attributes by hand.
@@ -167,19 +184,23 @@ The test depends on seeder contents and auto-increment IDs, uses a hard-coded UR
 - [ ] `fresh()` is used before asserting on a model the request modified.
 
 <a name="authorization-and-validation-tests"></a>
+
 ## Authorization and Validation Tests
 
 <a name="authorization-and-validation-tests-principle"></a>
+
 ### Principle
 
 Every protected endpoint is tested for: a guest, an outsider (another user or tenant), an insufficient role, invalid input, and the valid case. Assert the full permission matrix against the policy, and keep one HTTP test per refused case to prove the endpoint actually calls it.
 
 <a name="authorization-and-validation-tests-why-it-exists"></a>
+
 ### Why It Exists
 
 Missing authorization does not break the feature; the owner's happy path still passes. Only a test that acts as another user detects an IDOR. Likewise, a validation rule removed by mistake is invisible until bad data reaches the database.
 
 <a name="authorization-and-validation-tests-when-to-apply"></a>
+
 ### When To Apply
 
 - Any route, action, job, or AI tool that reads or writes user-owned data.
@@ -187,6 +208,7 @@ Missing authorization does not break the feature; the owner's happy path still p
 - Use a Pest dataset when several invalid inputs share the same setup and assertions.
 
 <a name="authorization-and-validation-tests-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Public, read-only endpoints with no user data need no outsider test.
@@ -194,6 +216,7 @@ Missing authorization does not break the feature; the owner's happy path still p
 - Do not assert that a rules array contains `'required'`; send invalid input and assert the error.
 
 <a name="authorization-and-validation-tests-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -225,6 +248,7 @@ test('refund requests reject invalid input', function (array $payload, string $f
 The outsider test asserts `404` (the record's existence is not confirmed) and that no state changed. The dataset names each invalid case so a failure reads as a sentence.
 
 <a name="authorization-and-validation-tests-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -240,6 +264,7 @@ test('owner can refund', function (): void {
 Only the owner is tested. Deleting the policy check leaves the suite green.
 
 <a name="authorization-and-validation-tests-checklist"></a>
+
 ### Checklist
 
 - [ ] Guest, outsider, and insufficient-role cases exist for each protected endpoint.
@@ -249,19 +274,23 @@ Only the owner is tested. Deleting the policy check leaves the suite green.
 - [ ] An unexpected key in the payload (`is_admin`, `user_id`) is tested and ignored or rejected.
 
 <a name="failure-paths-and-transactions"></a>
+
 ## Failure Paths and Transactions
 
 <a name="failure-paths-and-transactions-principle"></a>
+
 ### Principle
 
 For every operation that writes more than once, test that a failure midway leaves no partial state, and that the failure is reported and rendered safely.
 
 <a name="failure-paths-and-transactions-why-it-exists"></a>
+
 ### Why It Exists
 
 A missing `DB::transaction()` produces orders without stock movements, or stock decremented for orders that do not exist. The happy path never reveals it; only a forced failure does.
 
 <a name="failure-paths-and-transactions-when-to-apply"></a>
+
 ### When To Apply
 
 - Actions that perform several writes that must succeed or fail together.
@@ -269,6 +298,7 @@ A missing `DB::transaction()` produces orders without stock movements, or stock 
 - Provider failures: timeouts, `5xx`, malformed payloads (see [Faking External Boundaries](#faking-external-boundaries)).
 
 <a name="failure-paths-and-transactions-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A single `create()` or `update()` is already atomic; no rollback test is needed.
@@ -276,6 +306,7 @@ A missing `DB::transaction()` produces orders without stock movements, or stock 
 - Prefer forcing failure with real data (a constraint violation) over mocking Eloquent.
 
 <a name="failure-paths-and-transactions-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -297,6 +328,7 @@ test('a failed order leaves the stock untouched', function (): void {
 The duplicate reference makes the second write fail for real; the assertions prove the first write was rolled back.
 
 <a name="failure-paths-and-transactions-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -310,6 +342,7 @@ test('order fails gracefully', function (): void {
 Catching any `Exception` passes on unrelated errors, `withoutExceptionHandling()` changes the behavior under test, and nothing checks the data left behind.
 
 <a name="failure-paths-and-transactions-checklist"></a>
+
 ### Checklist
 
 - [ ] Each multi-write operation has a test that forces a mid-operation failure.
@@ -319,19 +352,23 @@ Catching any `Exception` passes on unrelated errors, `withoutExceptionHandling()
 - [ ] HTTP failure responses contain no stack trace, SQL, or internal message.
 
 <a name="concurrency-and-idempotency"></a>
+
 ## Concurrency and Idempotency
 
 <a name="concurrency-and-idempotency-principle"></a>
+
 ### Principle
 
 Test the guarantee that protects the invariant, not the race itself: the unique constraint, the conditional update, the idempotency key, or the lock. A single-process test cannot interleave two requests reliably, so verify the mechanism and the second-request outcome.
 
 <a name="concurrency-and-idempotency-why-it-exists"></a>
+
 ### Why It Exists
 
 Double-clicks, retries, and webhooks delivered twice create duplicate refunds and oversold stock. Application-level `exists()` checks pass every sequential test and still fail under real concurrency.
 
 <a name="concurrency-and-idempotency-when-to-apply"></a>
+
 ### When To Apply
 
 - Payments, refunds, stock, seats, invitations, and any operation a client may retry.
@@ -339,12 +376,14 @@ Double-clicks, retries, and webhooks delivered twice create duplicate refunds an
 - Any invariant that a database constraint or lock is supposed to hold.
 
 <a name="concurrency-and-idempotency-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Idempotent-by-nature operations (setting a name to a value) need no duplicate test.
 - Do not try to reproduce a true race with `sleep()` or parallel processes in the default suite; it is slow and flaky. The in-memory SQLite test database also does not reproduce MySQL/PostgreSQL row locking; validate `lockForUpdate()` behavior with a dedicated integration check against the production engine when it is critical.
 
 <a name="concurrency-and-idempotency-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -372,6 +411,7 @@ test('the database rejects a second refund row for the same invoice', function (
 The first test proves the replay contract; the second proves the constraint that still holds if two requests slip past the application check.
 
 <a name="concurrency-and-idempotency-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -385,6 +425,7 @@ test('cannot refund twice', function (): void {
 This only tests the sequential `isRefunded()` check. Two concurrent requests both see `refunded_at = null`, and nothing in the suite proves a constraint or atomic update stops the second one.
 
 <a name="concurrency-and-idempotency-checklist"></a>
+
 ### Checklist
 
 - [ ] The invariant is backed by a constraint, atomic update, lock, or idempotency key, and that mechanism has a test.
@@ -394,19 +435,23 @@ This only tests the sequential `isRefunded()` check. Two concurrent requests bot
 - [ ] Engine-specific locking is verified outside SQLite when it carries business risk, or the gap is disclosed.
 
 <a name="faking-external-boundaries"></a>
+
 ## Faking External Boundaries
 
 <a name="faking-external-boundaries-principle"></a>
+
 ### Principle
 
 Use framework fakes for every external boundary (HTTP, queue, events, mail, notifications, storage, time), fake the exact endpoints each test uses, and forbid stray requests. When a contract has several implementations, run one shared contract test against each of them.
 
 <a name="faking-external-boundaries-why-it-exists"></a>
+
 ### Why It Exists
 
 Unfaked HTTP calls make tests slow, flaky, and capable of charging a real card. A bare `Http::fake()` accepts any URL and hides a request to the wrong host. Without contract tests, the in-memory fake drifts from the real adapter and tests pass against behavior production never has.
 
 <a name="faking-external-boundaries-when-to-apply"></a>
+
 ### When To Apply
 
 - Any test that reaches code using `Http`, `Queue`, `Bus`, `Event`, `Mail`, `Notification`, or `Storage`.
@@ -414,6 +459,7 @@ Unfaked HTTP calls make tests slow, flaky, and capable of charging a real card. 
 - Interchangeable implementations (payment gateways, CAPTCHA providers, AI providers) bound through the container.
 
 <a name="faking-external-boundaries-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not fake the database or the query builder; use the real test database.
@@ -421,6 +467,7 @@ Unfaked HTTP calls make tests slow, flaky, and capable of charging a real card. 
 - Integration tests against a real sandbox belong in a group excluded from the default run (`--exclude-group=integration`), not in every CI job.
 
 <a name="faking-external-boundaries-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -457,6 +504,7 @@ test('a gateway rejects a zero amount', function (PaymentGateway $gateway): void
 ```
 
 <a name="faking-external-boundaries-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -472,6 +520,7 @@ test('order is placed', function (): void {
 A file-level `Http::fake()` with no URL returns `200` for anything, including a typo in the host. A `Queue::fake()` without class names also silences jobs the test never asserts on.
 
 <a name="faking-external-boundaries-checklist"></a>
+
 ### Checklist
 
 - [ ] `Http::preventStrayRequests()` is active, and each fake targets an exact URL pattern.
@@ -482,19 +531,23 @@ A file-level `Http::fake()` with no URL returns `200` for anything, including a 
 - [ ] Time-dependent tests use `freezeTime()` or `travelTo()`.
 
 <a name="frontend-tests"></a>
+
 ## Frontend Tests
 
 <a name="frontend-tests-principle"></a>
+
 ### Principle
 
 Test important user-visible behavior of components the way a user perceives it: by role, label, and text, through Vitest and Testing Library. Keep business rules on the server and test them there.
 
 <a name="frontend-tests-why-it-exists"></a>
+
 ### Why It Exists
 
 A component that never renders its error state, or submits twice on a double-click, passes every PHP test. Tests that query CSS classes or internal state break on every redesign without catching real regressions.
 
 <a name="frontend-tests-when-to-apply"></a>
+
 ### When To Apply
 
 - Components with loading, empty, error, and stale-response states.
@@ -502,6 +555,7 @@ A component that never renders its error state, or submits twice on a double-cli
 - Only after Vue or React is adopted. Neither is installed today; adding `vitest`, `@testing-library/vue` or `@testing-library/react`, and `jsdom` requires approval.
 
 <a name="frontend-tests-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Blade-only pages are covered by feature tests (`assertSee`, `assertSeeText`).
@@ -509,6 +563,7 @@ A component that never renders its error state, or submits twice on a double-cli
 - Do not re-test server validation rules in the component; test that server errors are displayed.
 
 <a name="frontend-tests-correct-example"></a>
+
 ### Correct Example
 
 React shown; Vue uses the same queries through `@testing-library/vue`.
@@ -533,6 +588,7 @@ it('disables the button while the refund is pending and shows server errors', as
 The test interacts through accessible roles and asserts what the user sees.
 
 <a name="frontend-tests-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```ts
@@ -546,6 +602,7 @@ it('sets state', () => {
 It mutates internal state directly and asserts a CSS class; it neither proves the user flow nor survives a refactor.
 
 <a name="frontend-tests-checklist"></a>
+
 ### Checklist
 
 - [ ] Elements are found by role, label, or text, not by class or test-only IDs when an accessible query exists.
@@ -555,19 +612,23 @@ It mutates internal state directly and asserts a CSS class; it neither proves th
 - [ ] No frontend test dependency was added without approval.
 
 <a name="regression-and-architecture-tests"></a>
+
 ## Regression and Architecture Tests
 
 <a name="regression-and-architecture-tests-principle"></a>
+
 ### Principle
 
 Every fixed bug starts with a test that fails for the reason the bug exists, then passes after the fix. Every structural convention worth enforcing is written as a Pest `arch()` test. A failing test is never weakened, skipped, or deleted to make an implementation pass.
 
 <a name="regression-and-architecture-tests-why-it-exists"></a>
+
 ### Why It Exists
 
 Bugs fixed without a test return in the next refactor. A test edited to match broken output turns the suite into a recording of current behavior. Conventions such as "no debug calls in `app/`" erode one file at a time unless something fails.
 
 <a name="regression-and-architecture-tests-when-to-apply"></a>
+
 ### When To Apply
 
 - Any bug fix: reproduce it in a test first, watch it fail, then fix.
@@ -575,6 +636,7 @@ Bugs fixed without a test return in the next refactor. A test edited to match br
 - Conventions that apply to a whole directory: forbidden functions, required base classes, layer dependencies.
 
 <a name="regression-and-architecture-tests-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A test may change when the requirement itself changes; document the new rule in the same commit.
@@ -582,6 +644,7 @@ Bugs fixed without a test return in the next refactor. A test edited to match br
 - Do not write `arch()` tests for rules that a single feature test already proves.
 
 <a name="regression-and-architecture-tests-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -604,6 +667,7 @@ arch('controllers do not query through the DB facade')
 The `php` preset forbids debug calls such as `dd`, `dump`, and `var_dump`; the `security` preset forbids functions such as `eval`, `exec`, `md5`, `rand`, and `unserialize`. Pest 5 also ships `laravel`, `strict`, and `relaxed` presets.
 
 <a name="regression-and-architecture-tests-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -616,6 +680,7 @@ test('refund total is computed', function (): void {
 The expected value was changed to match the output and then the test was skipped. Both hide a defect; investigate whether the calculation or the expectation is wrong.
 
 <a name="regression-and-architecture-tests-checklist"></a>
+
 ### Checklist
 
 - [ ] Each bug fix includes a test that failed before the fix.

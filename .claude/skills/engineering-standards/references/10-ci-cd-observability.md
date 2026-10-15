@@ -11,9 +11,10 @@
 - [Backups & Restore Drills](#backups)
 
 <a name="introduction"></a>
+
 ## Introduction
 
-This document expands section 13 ("Performance and operations") and section 14 ("Definition of done") of the [engineering standards](../../.ai/guidelines/engineering-standards.md). It covers how a change is verified before merge, how it reaches production, and how we know it is working once it is there.
+This document expands section 13 ("Performance and operations") and section 14 ("Definition of done") of the engineering standards (the `engineering-standards` guideline in `CLAUDE.md`). It covers how a change is verified before merge, how it reaches production, and how we know it is working once it is there.
 
 Scope: CI quality gates, deployment and migration procedure, logging, exception reporting, health checks, alerting, and backups. Query and rendering performance live in [Performance](09-performance.md). Test design lives in [Testing](07-testing.md). Database constraints and locking live in [Database & Concurrency](04-database-and-concurrency.md). Secret handling lives in [Security](08-security.md).
 
@@ -23,19 +24,23 @@ Related documents: [01-architecture.md](01-architecture.md), [02-domain-modules.
 > Project facts at the time of writing: Laravel 13, PHP 8.5, Pest 5 (Paratest installed, so `--parallel` works), Larastan 3 at `level: 1` in `phpstan.neon`, Pint, Vite 8. Tests run on SQLite (`phpunit.xml`). There is no `.github/workflows` directory yet; the pipeline below is the reference to adopt.
 
 <a name="quality-gates"></a>
+
 ## Automated Quality Gates
 
 <a name="quality-gates-principle"></a>
+
 ### Principle
 
 Every change passes the same machine-checked gates before merge: formatting (Pint), static analysis (Larastan), tests (Pest), dependency advisories (`composer audit`), and a production asset build (`npm run build`). A red gate blocks the merge; nobody "fixes it in the next PR".
 
 <a name="quality-gates-why-it-exists"></a>
+
 ### Why It Exists
 
 Without gates, the checks depend on someone remembering to run them. Typical failures: a call to an undefined method that only a rarely-hit path reaches and that Larastan would have flagged; a known-vulnerable package version merged because nobody ran `composer audit`; a deploy that fails with "Unable to locate file in Vite manifest" because the asset build was never tried.
 
 <a name="quality-gates-when-to-apply"></a>
+
 ### When To Apply
 
 - On every pull request and on every push to `main`.
@@ -43,6 +48,7 @@ Without gates, the checks depend on someone remembering to run them. Typical fai
 - When an AI agent produced the change. Agents must report which gates they actually ran (see [AI-assisted development](11-ai-assisted-development.md)).
 
 <a name="quality-gates-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not raise the Larastan level and fix 400 errors inside a feature PR. Raise it in a dedicated PR, using a baseline (`vendor/bin/phpstan analyse --generate-baseline`) if you need to.
@@ -50,6 +56,7 @@ Without gates, the checks depend on someone remembering to run them. Typical fai
 - Docs-only changes may skip the PHP jobs through path filters. They never skip them on `main`.
 
 <a name="quality-gates-correct-example"></a>
+
 ### Correct Example
 
 ```shell
@@ -63,6 +70,7 @@ npm ci && npm run build
 Locally, agents use `vendor/bin/pint --dirty --format agent`, which fixes the files instead of failing. CI uses `--test` because CI must never change code it is verifying.
 
 <a name="quality-gates-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```yaml
@@ -73,6 +81,7 @@ Locally, agents use `vendor/bin/pint --dirty --format agent`, which fixes the fi
 `|| true` turns the gate into decoration: the job is green whatever the result. Running only a filtered subset in CI hides regressions in every other file.
 
 <a name="quality-gates-checklist"></a>
+
 ### Checklist
 
 - [ ] Pint, Larastan, Pest, `composer audit` and `npm run build` all run in CI and all fail the build on error.
@@ -83,31 +92,37 @@ Locally, agents use `vendor/bin/pint --dirty --format agent`, which fixes the fi
 - [ ] PR descriptions say which gates were run locally and which were skipped.
 
 <a name="ci-pipeline"></a>
+
 ## The CI Pipeline
 
 <a name="ci-pipeline-principle"></a>
+
 ### Principle
 
 CI runs on the same PHP major/minor and the same database engine family as production. It caches dependencies by lockfile hash and runs independent gates as parallel jobs, so feedback is fast without being lenient.
 
 <a name="ci-pipeline-why-it-exists"></a>
+
 ### Why It Exists
 
 If CI runs on a different PHP version or database than production, tests can pass in CI and still fail in production. SQLite accepts things that MySQL or PostgreSQL reject: foreign key behaviour differs, `ALTER TABLE` support is limited, and type coercion is looser. A slow pipeline creates pressure to merge without waiting.
 
 <a name="ci-pipeline-when-to-apply"></a>
+
 ### When To Apply
 
 - Any repository that will be deployed.
 - Add a database service container as soon as production uses MySQL or PostgreSQL. SQLite in CI stays acceptable only while production also runs SQLite.
 
 <a name="ci-pipeline-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A throwaway demo branch may run a single job, but it still runs every gate.
 - Do not build a matrix across PHP versions for an application. A matrix is for libraries that support several versions. An application supports exactly the version it deploys on.
 
 <a name="ci-pipeline-correct-example"></a>
+
 ### Correct Example
 
 ```yaml
@@ -181,6 +196,7 @@ jobs:
 Pin each action to a current major version and let Dependabot bump it. `concurrency` cancels superseded runs on the same branch.
 
 <a name="ci-pipeline-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```yaml
@@ -194,6 +210,7 @@ Pin each action to a current major version and let Dependabot bump it. `concurre
 `latest` and `composer update` make the build non-reproducible: CI tests packages that are not in `composer.lock` and a PHP version production may not run. `npm install` can rewrite the lockfile. Use `npm ci`.
 
 <a name="ci-pipeline-checklist"></a>
+
 ### Checklist
 
 - [ ] The PHP version in CI matches production (`8.5`).
@@ -204,14 +221,17 @@ Pin each action to a current major version and let Dependabot bump it. `concurre
 - [ ] Superseded runs are cancelled through `concurrency`.
 
 <a name="deployments"></a>
+
 ## Deployments
 
 <a name="deployments-principle"></a>
+
 ### Principle
 
 A deployment is a scripted, repeatable sequence that runs in the same order every time: install locked dependencies without dev packages, build assets, migrate with `--force`, warm caches with `php artisan optimize`, then restart long-running processes. Each step fails loudly, and a failed step stops the deploy.
 
 <a name="deployments-why-it-exists"></a>
+
 ### Why It Exists
 
 Manual deploys skip steps. The common incidents:
@@ -221,12 +241,14 @@ Manual deploys skip steps. The common incidents:
 - Two servers run `migrate` at the same time.
 
 <a name="deployments-when-to-apply"></a>
+
 ### When To Apply
 
 - Every production and staging deploy, whether the host is Laravel Cloud, Forge or your own servers.
 - Use maintenance mode (`php artisan down`) only when a change truly cannot run alongside live traffic. One example is a destructive migration that cannot be split into expand/contract steps (see [Migration Safety](#migration-safety)).
 
 <a name="deployments-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - On Laravel Cloud, the platform builds the release and gracefully reloads services. Do not add a manual `reload` or `queue:restart` there; put only build and deploy commands in its configuration.
@@ -234,6 +256,7 @@ Manual deploys skip steps. The common incidents:
 - Local and CI environments do not run `optimize`. Cached config hides `.env` changes and confuses debugging.
 
 <a name="deployments-correct-example"></a>
+
 ### Correct Example
 
 ```shell
@@ -261,6 +284,7 @@ php artisan up
 ```
 
 <a name="deployments-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```shell
@@ -273,6 +297,7 @@ php artisan config:cache
 Pulling into the live directory serves half-updated code while the pull runs. This version also installs dev dependencies. `migrate` without `--force` stops at the production confirmation prompt, or someone adds `--force` on every server and they race each other. Workers are never restarted.
 
 <a name="deployments-checklist"></a>
+
 ### Checklist
 
 - [ ] The deploy script uses `set -e` (or the platform's equivalent) and stops on the first failure.
@@ -284,19 +309,23 @@ Pulling into the live directory serves half-updated code while the pull runs. Th
 - [ ] Any use of `php artisan down` is justified in the PR description.
 
 <a name="migration-safety"></a>
+
 ## Migration Safety & Rollback
 
 <a name="migration-safety-principle"></a>
+
 ### Principle
 
 Every migration must be compatible with both the code currently running and the code being deployed. Breaking schema changes follow **expand / migrate data / contract** across separate releases. Once a migration has run in production, the default response to a problem is a **forward fix**, not `migrate:rollback`.
 
 <a name="migration-safety-why-it-exists"></a>
+
 ### Why It Exists
 
 During a zero-downtime deploy, the old code serves requests after the new schema exists. Workers may also process old jobs. Renaming or dropping a column in one step therefore produces SQL errors for the whole length of the deploy. A `down()` method that drops a column destroys the data written since the deploy, so a rollback can lose more than the bug did.
 
 <a name="migration-safety-when-to-apply"></a>
+
 ### When To Apply
 
 - Renaming or dropping columns or tables, changing types, adding `NOT NULL` to existing columns, or adding unique constraints to populated tables.
@@ -304,6 +333,7 @@ During a zero-downtime deploy, the old code serves requests after the new schema
 - Any migration that takes locks on a large or hot table. Test it on a production-sized copy first, and use `migrate --pretend` to review the SQL.
 
 <a name="migration-safety-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Purely additive changes (a new table, or a new nullable column) are safe in one step.
@@ -311,6 +341,7 @@ During a zero-downtime deploy, the old code serves requests after the new schema
 - Rollback is acceptable when the migration has not yet written or dropped user data, for example a failed deploy caught on staging, or an index that was added and must be removed.
 
 <a name="migration-safety-correct-example"></a>
+
 ### Correct Example
 
 Renaming `tickets.body` to `tickets.message` across three releases:
@@ -337,6 +368,7 @@ Schema::table('tickets', function (Blueprint $table): void {
 Each release can be deployed and reverted on its own without losing data.
 
 <a name="migration-safety-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -351,6 +383,7 @@ public function up(): void
 Old code that is still serving requests during the deploy queries `body` and fails. If the team then "rolls back" by renaming the column again, jobs serialized with the new shape fail instead.
 
 <a name="migration-safety-checklist"></a>
+
 ### Checklist
 
 - [ ] The migration works with both the old and the new code running at the same time.
@@ -361,25 +394,30 @@ Old code that is still serving requests during the deploy queries `body` and fai
 - [ ] Destructive steps run only after a verified backup (see [Backups](#backups)).
 
 <a name="structured-logging"></a>
+
 ## Structured Logging
 
 <a name="structured-logging-principle"></a>
+
 ### Principle
 
 Logs are structured events with a short constant message and the variable data in the context array. Request-wide identifiers such as trace ID, user ID or tenant go through the `Context` facade (`Illuminate\Support\Facades\Context`). That data is attached to every log entry and carried into queued jobs automatically. Secrets never reach a log.
 
 <a name="structured-logging-why-it-exists"></a>
+
 ### Why It Exists
 
 If messages interpolate their data (`"Refund 42 failed for user 7"`), you cannot group or filter them. Without a shared trace ID, nobody can follow one request into the job it dispatched. Logging a full request or a model's `toArray()` puts passwords, API tokens and personal data into a system with weaker access control than the database.
 
 <a name="structured-logging-when-to-apply"></a>
+
 ### When To Apply
 
 - At business events worth auditing (a refund issued, an invoice sent), at integration boundaries (an external API failure), and in error paths you handle without rethrowing.
 - Add `Context` in a global middleware for request-scoped identifiers, and in commands or scheduled tasks for a run ID.
 
 <a name="structured-logging-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not log the happy path of every method. Volume costs money and buries signal.
@@ -387,6 +425,7 @@ If messages interpolate their data (`"Refund 42 failed for user 7"`), you cannot
 - Values that must travel to jobs but must not be logged belong in `Context::addHidden()`.
 
 <a name="structured-logging-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -414,6 +453,7 @@ Log::warning('Refund rejected by provider.', [
 Register the middleware with `$middleware->append(AssignTraceContext::class)` in `bootstrap/app.php`. In production, use a `LOG_STACK` that ships logs to a central store, such as `daily` plus your log driver.
 
 <a name="structured-logging-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -424,6 +464,7 @@ Log::debug('Calling provider', ['headers' => $client->headers()]);
 `$request->all()` contains the password. The headers contain the bearer token. Interpolating the email into the message turns every entry into a unique string that cannot be aggregated.
 
 <a name="structured-logging-checklist"></a>
+
 ### Checklist
 
 - [ ] Log messages are constant strings and the variable data goes in the context array.
@@ -434,19 +475,23 @@ Log::debug('Calling provider', ['headers' => $client->headers()]);
 - [ ] Log retention is defined (for example `LOG_DAILY_DAYS`, or the central store's policy).
 
 <a name="exception-reporting"></a>
+
 ## Exception Reporting
 
 <a name="exception-reporting-principle"></a>
+
 ### Principle
 
 Unhandled exceptions go to one central reporter, configured in `withExceptions()` in `bootstrap/app.php`, with useful context and controlled noise. Exceptions that are expected (validation, 404, authorization) are not reported. Domain exceptions carry their own `context()`.
 
 <a name="exception-reporting-why-it-exists"></a>
+
 ### Why It Exists
 
 Without context, an alert says "RuntimeException" and nothing else. Without throttling, a third-party outage floods the tracker and hides the real regression. Swallowing an exception with an empty `catch` turns a visible failure into silent data corruption.
 
 <a name="exception-reporting-when-to-apply"></a>
+
 ### When To Apply
 
 - Configure global context, throttling and `dontReport` once, in `bootstrap/app.php`.
@@ -454,12 +499,14 @@ Without context, an alert says "RuntimeException" and nothing else. Without thro
 - Use `report($e)` when you handle an exception and continue, but still need to know it happened.
 
 <a name="exception-reporting-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not call `report()` for an outcome the user is expected to hit, such as a declined card or a duplicate submission. Return the outcome; if you need a trend, track it as a metric.
 - Do not sample (`Lottery`) exceptions that indicate data integrity problems. Sample only high-volume, low-value noise.
 
 <a name="exception-reporting-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -487,6 +534,7 @@ use Illuminate\Support\Facades\Context;
 Context is attached to every report. Provider outages are rate-limited per exception class. Real regressions still reach the tracker.
 
 <a name="exception-reporting-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -500,6 +548,7 @@ try {
 The failure is invisible: nothing is reported, and the user is told the refund succeeded when it failed. At minimum, `report($e)` and tell the user the truth.
 
 <a name="exception-reporting-checklist"></a>
+
 ### Checklist
 
 - [ ] There are no empty `catch` blocks, and every caught `Throwable` is rethrown, reported, or converted into an explicit outcome.
@@ -510,19 +559,23 @@ The failure is invisible: nothing is reported, and the user is told the refund s
 - [ ] An external tracker or log store receives the reports. Options include Laravel Nightwatch, Sentry and Flare.
 
 <a name="health-checks"></a>
+
 ## Health Checks, Metrics & Alerts
 
 <a name="health-checks-principle"></a>
+
 ### Principle
 
 Expose a cheap health endpoint, measure the few signals that reflect user pain (error rate, latency, queue backlog, failed jobs, scheduler heartbeat), and alert on **symptoms** that someone must act on, never on raw causes such as CPU.
 
 <a name="health-checks-why-it-exists"></a>
+
 ### Why It Exists
 
 The default `/up` route only proves the framework boots. It stays green while the database is unreachable or the queue is ten thousand jobs behind. When alerts fire on noise ("CPU 80%"), people learn to ignore them, and the real outage is found by a customer.
 
 <a name="health-checks-when-to-apply"></a>
+
 ### When To Apply
 
 - Use the `/up` route (already configured with `health: '/up'` in `bootstrap/app.php`) for load balancers and uptime monitors.
@@ -530,6 +583,7 @@ The default `/up` route only proves the framework boots. It stays green while th
 - Schedule `queue:monitor` as soon as the app uses a real queue (`QUEUE_CONNECTION=database` today).
 
 <a name="health-checks-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not check third-party APIs in `/up`. A load balancer would take every server out of rotation because a payment provider is slow. Monitor those dependencies separately.
@@ -537,6 +591,7 @@ The default `/up` route only proves the framework boots. It stays green while th
 - Pulse, Nightwatch or a third-party APM are options to adopt when the logs no longer answer "what is slow?". They are not prerequisites.
 
 <a name="health-checks-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -570,6 +625,7 @@ Alert on the following, each with an owner:
 - Scheduler heartbeat missing.
 
 <a name="health-checks-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -582,6 +638,7 @@ Route::get('/health', function () {
 This health route calls a third party, so an outage outside our control fails our health check. It counts a whole table on every probe, and it is public and leaks data volume.
 
 <a name="health-checks-checklist"></a>
+
 ### Checklist
 
 - [ ] `/up` is monitored externally and includes the database check through `DiagnosingHealth`.
@@ -592,19 +649,23 @@ This health route calls a third party, so an outage outside our control fails ou
 - [ ] Every alert has an owner and a one-line runbook, and none fire on causes alone.
 
 <a name="backups"></a>
+
 ## Backups & Restore Drills
 
 <a name="backups-principle"></a>
+
 ### Principle
 
 A backup counts only after it has been restored. Persistent data (database, uploaded files) is backed up automatically, encrypted, stored off-site with a defined retention, and **restored on a schedule** into a non-production environment to prove it works.
 
 <a name="backups-why-it-exists"></a>
+
 ### Why It Exists
 
 Teams discover during an incident that the dump was empty, excluded a schema, was encrypted with a lost key, or takes nine hours to restore. A destructive migration or a bad `DELETE` without a recent verified backup means permanent data loss.
 
 <a name="backups-when-to-apply"></a>
+
 ### When To Apply
 
 - Any environment holding data that cannot be regenerated: production always, staging when it holds client test data.
@@ -612,12 +673,14 @@ Teams discover during an incident that the dump was empty, excluded a schema, wa
 - Define an RPO (maximum acceptable data loss) and an RTO (maximum restore time) with the business. These two numbers drive the backup frequency.
 
 <a name="backups-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Caches, compiled views, queues of idempotent jobs and other regenerable data do not need backups.
 - A managed database with point-in-time recovery (Laravel Cloud, RDS) replaces your own dump scripts. It does not replace restore drills, and it does not cover uploaded files on separate storage.
 
 <a name="backups-correct-example"></a>
+
 ### Correct Example
 
 ```shell
@@ -633,6 +696,7 @@ php artisan tinker --execute 'echo App\Models\Invoice::max("created_at");'
 The drill measures the two numbers that matter: how much data the backup would lose, and how long it takes to get it back.
 
 <a name="backups-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```shell
@@ -643,6 +707,7 @@ The drill measures the two numbers that matter: how much data the backup would l
 The dump is stored on the same server it protects and is overwritten every night, so there is no history. It is unencrypted and has never been restored. Its failure would go unnoticed because nothing checks it.
 
 <a name="backups-checklist"></a>
+
 ### Checklist
 
 - [ ] Database and file storage are both backed up automatically and stored off-site.

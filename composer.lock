@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a844c6a7b046b118b1abd2cd99ad63c4",
+    "content-hash": "657c3b85ad826962b0531b2ec1f03282",
     "packages": [
         {
             "name": "brick/math",
@@ -7360,6 +7360,50 @@
                 "source": "https://github.com/laravel/roster"
             },
             "time": "2026-07-18T17:53:15+00:00"
+        },
+        {
+            "name": "ludoguenet/laravel-standards",
+            "version": "v0.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/ludoguenet/laravel-standards.git",
+                "reference": "1978da1eb738266a78ade8b264a9375a49487380"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/ludoguenet/laravel-standards/zipball/1978da1eb738266a78ade8b264a9375a49487380",
+                "reference": "1978da1eb738266a78ade8b264a9375a49487380",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.3"
+            },
+            "suggest": {
+                "laravel/boost": "Required to install these guidelines and skills into your AI agent (^2.2)."
+            },
+            "type": "library",
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Ludovic Guénet"
+                }
+            ],
+            "description": "Engineering standards, guidelines and agent skills for Laravel projects, delivered through Laravel Boost.",
+            "keywords": [
+                "ai",
+                "boost",
+                "guidelines",
+                "laravel",
+                "skills"
+            ],
+            "support": {
+                "issues": "https://github.com/ludoguenet/laravel-standards/issues",
+                "source": "https://github.com/ludoguenet/laravel-standards/tree/v0.1.0"
+            },
+            "time": "2026-10-15T16:00:39+00:00"
         },
         {
             "name": "mockery/mockery",

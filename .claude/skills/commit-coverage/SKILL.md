@@ -7,6 +7,7 @@ disable-model-invocation: true
 ---
 
 # Commit with coverage report
+
 Diff of staged files:
 !`git diff --cached`
 

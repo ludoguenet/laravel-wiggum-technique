@@ -11,9 +11,10 @@
 - [Measuring Query Performance](#measuring-query-performance)
 
 <a name="introduction"></a>
+
 ## Introduction
 
-This document expands section 7 ("Database integrity and concurrency") of the [engineering standards](../../.ai/guidelines/engineering-standards.md). It covers how invariants are protected when several requests, workers or deployments touch the same rows at the same time.
+This document expands section 7 ("Database integrity and concurrency") of the engineering standards (the `engineering-standards` guideline in `CLAUDE.md`). It covers how invariants are protected when several requests, workers or deployments touch the same rows at the same time.
 
 The guiding rule: application code expresses intent, the database enforces truth. Validation and `if` statements are a convenience for users; constraints, atomic statements and locks are what keep data correct under concurrency.
 
@@ -27,19 +28,23 @@ Related documents:
 - [10-ci-cd-observability.md](10-ci-cd-observability.md) — migration rollout and monitoring.
 
 <a name="database-constraints"></a>
+
 ## Database Constraints
 
 <a name="database-constraints-principle"></a>
+
 ### Principle
 
 Every invariant that must hold for *all* writers (web requests, queue workers, Artisan commands, manual SQL, future services) is declared in the schema: foreign keys, unique indexes, `NOT NULL` and, where the database supports them, check constraints. Form Request validation duplicates these rules for user-friendly messages; it never replaces them.
 
 <a name="database-constraints-why-it-exists"></a>
+
 ### Why It Exists
 
 A `unique` validation rule runs a `SELECT` and then the `INSERT` happens later. Two simultaneous registrations with the same email both pass validation and both insert. Without a unique index you now have two accounts, and every `->first()` lookup silently picks one. The same applies to orphaned rows after a parent is deleted, or negative stock written by a buggy job that bypasses the controller.
 
 <a name="database-constraints-when-to-apply"></a>
+
 ### When To Apply
 
 - A column must be unique per scope (email, `(team_id, slug)`, external payment id, idempotency key).
@@ -48,6 +53,7 @@ A `unique` validation rule runs a `SELECT` and then the `INSERT` happens later. 
 - A column is required for the row to be meaningful: leave it `NOT NULL` (the default) instead of adding `->nullable()` "just in case".
 
 <a name="database-constraints-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Rules that depend on mutable configuration or other tables' aggregates ("max 5 members on the free plan"): enforce them in the application with a lock (see [Pessimistic Locking](#pessimistic-locking)).
@@ -56,6 +62,7 @@ A `unique` validation rule runs a `SELECT` and then the `INSERT` happens later. 
 - Cross-database or cross-service references: there is no FK across connections; reconcile with a scheduled check instead.
 
 <a name="database-constraints-correct-example"></a>
+
 ### Correct Example
 
 The Schema builder has no fluent check-constraint method, so check constraints are added with a raw statement after the table exists (MySQL 8.0.16+ and PostgreSQL enforce them; SQLite only supports them at `CREATE TABLE` time).
@@ -83,6 +90,7 @@ public function up(): void
 The unique pair makes "add the same product twice" impossible regardless of which code path writes the line.
 
 <a name="database-constraints-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -98,6 +106,7 @@ if (OrderLine::where('order_id', $order->id)->where('product_id', $productId)->e
 No foreign keys, nullable references and an application-only uniqueness check: orphans and duplicates appear as soon as two requests interleave or a job writes directly.
 
 <a name="database-constraints-checklist"></a>
+
 ### Checklist
 
 - [ ] Every `*_id` column uses `foreignId()->constrained()` with an explicit on-delete behavior.
@@ -108,19 +117,23 @@ No foreign keys, nullable references and an application-only uniqueness check: o
 - [ ] Validation rules mirror, not replace, the schema constraints.
 
 <a name="transactions"></a>
+
 ## Transactions
 
 <a name="transactions-principle"></a>
+
 ### Principle
 
 Writes that must succeed or fail together run inside `DB::transaction()`. The transaction contains only database work; network calls, mail, and queued work happen outside or after commit.
 
 <a name="transactions-why-it-exists"></a>
+
 ### Why It Exists
 
 Without a transaction, an exception between "create order" and "create order lines" leaves a half-written order that customers can see and pay for. With an over-wide transaction, a 10-second payment-gateway timeout holds row locks for 10 seconds, blocking every other request on those rows, and a job dispatched inside the closure may run *before* commit and find no row (or run although the transaction rolled back).
 
 <a name="transactions-when-to-apply"></a>
+
 ### When To Apply
 
 - Two or more writes form one business operation (order + lines + stock movement).
@@ -128,6 +141,7 @@ Without a transaction, an exception between "create order" and "create order lin
 - Jobs, events, notifications or broadcasts depend on the written data: dispatch them with `afterCommit()` or rely on `DB::afterCommit()`.
 
 <a name="transactions-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A single `INSERT`/`UPDATE` statement: it is already atomic.
@@ -135,6 +149,7 @@ Without a transaction, an exception between "create order" and "create order lin
 - Around HTTP calls to third parties: call the provider first (or after commit), and persist the result in a short transaction. If the call must happen "between" writes, store a pending state, commit, call, then commit the outcome.
 
 <a name="transactions-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -162,6 +177,7 @@ public function handle(Cart $cart, PaymentGateway $gateway): Order
 `attempts: 3` only retries on concurrency errors (deadlocks, serialization failures); other exceptions roll back and are rethrown immediately.
 
 <a name="transactions-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -176,6 +192,7 @@ DB::transaction(function () use ($cart, $gateway) {
 If the commit fails after the charge, the customer is billed for an order that does not exist, and the email already left.
 
 <a name="transactions-checklist"></a>
+
 ### Checklist
 
 - [ ] Multi-write operations are wrapped in a single `DB::transaction()`.
@@ -186,19 +203,23 @@ If the commit fails after the charge, the customer is billed for an order that d
 - [ ] A test asserts nothing is persisted when the second write throws.
 
 <a name="race-conditions-and-atomic-updates"></a>
+
 ## Race Conditions & Atomic Updates
 
 <a name="race-conditions-and-atomic-updates-principle"></a>
+
 ### Principle
 
 A "check then act" sequence in PHP (`if ($stock > 0) { $stock--; save(); }`) is never safe under concurrency. Fold the check into the write itself with a guarded `UPDATE ... WHERE` and inspect the affected-row count, or lock the row first (next section).
 
 <a name="race-conditions-and-atomic-updates-why-it-exists"></a>
+
 ### Why It Exists
 
 Two buyers load a product with `stock = 1`. Both pass `if ($product->stock > 0)`, both decrement, and you have sold two units of one item. A transaction alone does not help: under the default `REPEATABLE READ`/`READ COMMITTED` isolation, both transactions read `1` without blocking each other.
 
 <a name="race-conditions-and-atomic-updates-when-to-apply"></a>
+
 ### When To Apply
 
 - Counters and quotas: stock, seats, tickets, credits, rate counters.
@@ -206,6 +227,7 @@ Two buyers load a product with `stock = 1`. Both pass `if ($product->stock > 0)`
 - Any decision whose input can be changed by another request between your read and your write.
 
 <a name="race-conditions-and-atomic-updates-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - The decision needs data from several rows or tables that a single `WHERE` cannot express: use [pessimistic locking](#pessimistic-locking).
@@ -213,6 +235,7 @@ Two buyers load a product with `stock = 1`. Both pass `if ($product->stock > 0)`
 - Data written by a single process only (an import command running alone, guarded by `withoutOverlapping()`).
 
 <a name="race-conditions-and-atomic-updates-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -240,6 +263,7 @@ public function markPaid(Order $order): bool
 The database evaluates the guard and the write as one statement; only one caller can see `1` affected row.
 
 <a name="race-conditions-and-atomic-updates-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -254,6 +278,7 @@ if ($product->stock >= $quantity) {
 Besides overselling, `save()` writes `stock = <old - qty>`, so a concurrent restock is silently lost. Note that the model-level `$product->decrement('stock')` is atomic (`stock = stock - 1`) but still has no guard.
 
 <a name="race-conditions-and-atomic-updates-checklist"></a>
+
 ### Checklist
 
 - [ ] No business decision relies on a value read earlier in the request without a guard or lock.
@@ -264,19 +289,23 @@ Besides overselling, `save()` writes `stock = <old - qty>`, so a concurrent rest
 - [ ] A test reproduces the stale-read scenario and asserts the second caller is rejected.
 
 <a name="pessimistic-locking"></a>
+
 ## Pessimistic Locking
 
 <a name="pessimistic-locking-principle"></a>
+
 ### Principle
 
 When a decision needs to read a row (or several) and then write based on what was read, lock the rows with `lockForUpdate()` inside a transaction. Use `sharedLock()` when you only need the rows not to change while you read them. Always acquire locks in a deterministic order.
 
 <a name="pessimistic-locking-why-it-exists"></a>
+
 ### Why It Exists
 
 Some invariants cannot fit in one `WHERE`: "transfer 50 from wallet A to wallet B if A's balance and daily limit allow it", "add a member unless the team's plan limit is reached". Without a lock, two transfers read the same balance and both succeed. `SELECT ... FOR UPDATE` makes the second transaction wait until the first commits, then read the fresh value.
 
 <a name="pessimistic-locking-when-to-apply"></a>
+
 ### When To Apply
 
 - Read-decide-write across several columns or rows (balances, limits, aggregates).
@@ -284,6 +313,7 @@ Some invariants cannot fit in one `WHERE`: "transfer 50 from wallet A to wallet 
 - `sharedLock()` (`FOR SHARE` / `LOCK IN SHARE MODE`) when you read a parent row and must prevent it from changing or being deleted until you commit (e.g. inserting children of an order that must stay `open`).
 
 <a name="pessimistic-locking-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A single guarded `UPDATE` expresses the rule: it is cheaper and cannot deadlock on read ordering.
@@ -292,6 +322,7 @@ Some invariants cannot fit in one `WHERE`: "transfer 50 from wallet A to wallet 
 - Work outside a transaction: the lock is released immediately, so it protects nothing.
 
 <a name="pessimistic-locking-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -320,6 +351,7 @@ public function transfer(Wallet $from, Wallet $to, int $amountCents): void
 For a single model already in memory, `$tour->refreshForUpdate()` as the first statement in the transaction is the idiomatic equivalent.
 
 <a name="pessimistic-locking-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -335,6 +367,7 @@ DB::transaction(function () use ($wallet, $amount) {
 The lock is taken in autocommit mode and the decision uses the pre-transaction value, so two concurrent withdrawals both pass.
 
 <a name="pessimistic-locking-checklist"></a>
+
 ### Checklist
 
 - [ ] Every `lockForUpdate()`/`sharedLock()`/`refreshForUpdate()` call is inside `DB::transaction()`.
@@ -345,19 +378,23 @@ The lock is taken in autocommit mode and the decision uses the pre-transaction v
 - [ ] Concurrency behavior is tested against MySQL/PostgreSQL, not only SQLite.
 
 <a name="deadlocks"></a>
+
 ## Deadlocks
 
 <a name="deadlocks-principle"></a>
+
 ### Principle
 
 Deadlocks are an expected, recoverable event in any system that locks rows. Reduce their frequency with consistent lock ordering and short transactions, and handle the remainder with automatic retries via the `attempts` argument of `DB::transaction()`.
 
 <a name="deadlocks-why-it-exists"></a>
+
 ### Why It Exists
 
 Request 1 locks wallet 7 then wallet 9; request 2 locks wallet 9 then wallet 7. Each waits for the other, the database kills one transaction and the user gets a 500 error. Unhandled, these surface as random production errors that never reproduce locally.
 
 <a name="deadlocks-when-to-apply"></a>
+
 ### When To Apply
 
 - Transactions that lock more than one row, or rows in more than one table.
@@ -365,12 +402,14 @@ Request 1 locks wallet 7 then wallet 9; request 2 locks wallet 9 then wallet 7. 
 - MySQL InnoDB with non-unique or missing indexes on the locking query: gap locks widen the locked range and multiply deadlocks.
 
 <a name="deadlocks-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Single-statement updates on one row by primary key: they cannot deadlock with each other.
 - Do not wrap *every* transaction in retries "for safety": a retried closure must be free of side effects, and retrying hides genuine lock-ordering bugs that should be fixed.
 
 <a name="deadlocks-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -392,6 +431,7 @@ DB::transaction(function () use ($order): void {
 Sorted lock acquisition removes the classic cycle; `attempts: 3` absorbs the rare remaining deadlock.
 
 <a name="deadlocks-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -407,6 +447,7 @@ DB::transaction(function () use ($order) {
 Laravel only retries at the outermost level: a deadlock inside a nested transaction is rethrown as a `DeadlockException`. Lock order follows the cart order, so two carts with the same products in a different order deadlock.
 
 <a name="deadlocks-checklist"></a>
+
 ### Checklist
 
 - [ ] Rows are always locked in ascending primary-key order, tables in a documented order.
@@ -416,19 +457,23 @@ Laravel only retries at the outermost level: a deadlock inside a nested transact
 - [ ] Deadlock exceptions are monitored; a rising rate triggers a lock-order review.
 
 <a name="idempotency"></a>
+
 ## Idempotency
 
 <a name="idempotency-principle"></a>
+
 ### Principle
 
 An operation that may be retried (client retries, double-clicks, webhook redelivery, queue retries) produces the same outcome when executed twice. The guarantee comes from a unique constraint on a business or client-supplied key, optionally fronted by an atomic lock (`Cache::lock()`) or a unique job (`ShouldBeUnique`).
 
 <a name="idempotency-why-it-exists"></a>
+
 ### Why It Exists
 
 Mobile clients retry on timeout even though the first request succeeded. Stripe redelivers webhooks. A queue worker crashes after charging but before acknowledging the job. Without idempotency each retry creates another order, charge or email.
 
 <a name="idempotency-when-to-apply"></a>
+
 ### When To Apply
 
 - `POST` endpoints that create money-related or externally visible resources (orders, payments, invitations).
@@ -437,6 +482,7 @@ Mobile clients retry on timeout even though the first request succeeded. Stripe 
 - Jobs that should not be queued twice concurrently: `ShouldBeUnique` with `uniqueId()` and `#[UniqueFor(seconds)]` or `uniqueFor()`.
 
 <a name="idempotency-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Naturally idempotent operations: `PUT` of a full resource, `DELETE`, guarded state transitions (`pending -> paid` only once).
@@ -444,6 +490,7 @@ Mobile clients retry on timeout even though the first request succeeded. Stripe 
 - Do not rely on `Cache::lock()` alone for correctness: locks expire and cache stores can be flushed. It reduces duplicate work; the unique index guarantees correctness.
 
 <a name="idempotency-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -463,6 +510,7 @@ public function store(StorePaymentRequest $request, ChargeCustomer $chargeCustom
 `payments.idempotency_key` carries a unique index, so even if the lock expires the second insert fails with `UniqueConstraintViolationException` instead of charging twice. `block()` throws `LockTimeoutException` if the lock cannot be acquired; map it to a `409`.
 
 <a name="idempotency-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -475,6 +523,7 @@ if (! Payment::where('order_id', $orderId)->exists()) { // check-then-act again
 Two retries arriving together both see "no payment", both charge. Without a unique index there is no backstop, and without passing an idempotency key to the gateway, the provider cannot deduplicate either.
 
 <a name="idempotency-checklist"></a>
+
 ### Checklist
 
 - [ ] Each retryable create operation has a unique column for its idempotency or business key.
@@ -485,19 +534,23 @@ Two retries arriving together both see "no payment", both charge. Without a uniq
 - [ ] A test sends the same request twice and asserts one resource and one side effect.
 
 <a name="zero-downtime-migrations"></a>
+
 ## Zero-Downtime Migrations
 
 <a name="zero-downtime-migrations-principle"></a>
+
 ### Principle
 
 During a deploy, old and new code run against the same schema. Every migration must be compatible with both. Breaking changes follow expand / migrate / contract across separate deploys: add the new structure, backfill and dual-write, switch reads, then remove the old structure.
 
 <a name="zero-downtime-migrations-why-it-exists"></a>
+
 ### Why It Exists
 
 Renaming `name` to `full_name` in one deploy makes every old PHP worker (still serving requests or processing queued jobs) fail with "unknown column" until it restarts. Adding a `NOT NULL` column without a default rejects inserts from old code. Adding an index on a 50-million-row table can lock writes for minutes on some engines.
 
 <a name="zero-downtime-migrations-when-to-apply"></a>
+
 ### When To Apply
 
 - Renaming or dropping columns or tables that running code reads.
@@ -506,6 +559,7 @@ Renaming `name` to `full_name` in one deploy makes every old PHP worker (still s
 - Adding indexes or constraints to large, write-heavy tables.
 
 <a name="zero-downtime-migrations-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - New tables and new nullable columns: they are already additive.
@@ -513,6 +567,7 @@ Renaming `name` to `full_name` in one deploy makes every old PHP worker (still s
 - Small tables (a few thousand rows) where an index build is instantaneous; measure on a production-sized copy if unsure.
 
 <a name="zero-downtime-migrations-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -537,6 +592,7 @@ Schema::table('customers', function (Blueprint $table) {
 On PostgreSQL, create large indexes with `CREATE INDEX CONCURRENTLY` via `DB::statement()` in a migration that sets `public $withinTransaction = false;`, because that statement cannot run inside a transaction. On MySQL 8, verify that the operation is online (`ALGORITHM=INPLACE, LOCK=NONE`) before running it on a large table.
 
 <a name="zero-downtime-migrations-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -549,6 +605,7 @@ Schema::table('customers', function (Blueprint $table) {
 Old code breaks the moment the migration runs; the `NOT NULL` column fails on existing rows or blocks old inserts; rollback means data loss.
 
 <a name="zero-downtime-migrations-checklist"></a>
+
 ### Checklist
 
 - [ ] The migration works with the currently deployed code *and* the new code.
@@ -559,19 +616,23 @@ Old code breaks the moment the migration runs; the `NOT NULL` column fails on ex
 - [ ] `down()` is either correct and tested, or explicitly documented as irreversible.
 
 <a name="measuring-query-performance"></a>
+
 ## Measuring Query Performance
 
 <a name="measuring-query-performance-principle"></a>
+
 ### Principle
 
 Query performance decisions (adding an index, rewriting a query, denormalizing) are based on measurements: `EXPLAIN` plans, query counts and timings on realistic data volumes, never on intuition.
 
 <a name="measuring-query-performance-why-it-exists"></a>
+
 ### Why It Exists
 
 Indexes added "just in case" slow down every write and are often not used by the planner. Conversely, a query that is instant with 100 local rows does a full scan on 5 million production rows. Only the plan tells you which case you are in.
 
 <a name="measuring-query-performance-when-to-apply"></a>
+
 ### When To Apply
 
 - Before adding or removing an index.
@@ -580,6 +641,7 @@ Indexes added "just in case" slow down every write and are often not used by the
 - For any query that runs under `lockForUpdate()`: a missing index turns a row lock into a range or table lock.
 
 <a name="measuring-query-performance-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Small, bounded tables (settings, countries, roles): a full scan is fine.
@@ -587,6 +649,7 @@ Indexes added "just in case" slow down every write and are often not used by the
 - Plans from SQLite or an empty local database do not represent production; do not optimize based on them.
 
 <a name="measuring-query-performance-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -601,6 +664,7 @@ Order::query()
 Look for full scans (`type: ALL` on MySQL, `Seq Scan` on PostgreSQL), high estimated rows and filesorts. If confirmed, add a composite index matching the filter and sort order, e.g. `$table->index(['customer_id', 'status', 'created_at']);`, then re-run `EXPLAIN` to prove it is used. Use `EXPLAIN ANALYZE` in a database console for actual timings.
 
 <a name="measuring-query-performance-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -615,6 +679,7 @@ Schema::table('orders', function (Blueprint $table) {
 Four single-column indexes added without a plan: the planner typically uses only one, writes pay for all four, and the real query still filesorts.
 
 <a name="measuring-query-performance-checklist"></a>
+
 ### Checklist
 
 - [ ] Every new index is justified by an `EXPLAIN` of a real query.

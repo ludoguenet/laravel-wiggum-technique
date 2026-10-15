@@ -6,6 +6,9 @@
     "guidelines": true,
     "mcp": true,
     "nightwatch": false,
+    "packages": [
+        "ludoguenet/laravel-standards"
+    ],
     "sail": false,
     "skills": [
         "infer-conventions",
@@ -13,6 +16,8 @@
         "laravel-best-practices",
         "testing-best-practices",
         "tailwindcss-development",
-        "add-interchangeable-provider"
+        "add-interchangeable-provider",
+        "commit-coverage",
+        "engineering-standards"
     ]
 }

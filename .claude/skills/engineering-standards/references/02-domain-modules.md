@@ -10,9 +10,10 @@
 - [Contract Tests and Fakes](#contract-tests)
 
 <a name="introduction"></a>
+
 ## Introduction
 
-This document expands section 4 ("Domain modules") and section 5 ("Interchangeable implementations") of the [engineering standards](../../.ai/guidelines/engineering-standards.md). It explains when a feature should become a module, how to lay one out, how to hide provider-specific details behind a contract, and how to test the result.
+This document expands section 4 ("Domain modules") and section 5 ("Interchangeable implementations") of the engineering standards (the `engineering-standards` guideline in `CLAUDE.md`). It explains when a feature should become a module, how to lay one out, how to hide provider-specific details behind a contract, and how to test the result.
 
 Every topic below builds part of one worked example: a **CAPTCHA module** that can verify tokens with Cloudflare Turnstile or hCaptcha. Configuration picks the driver, a validation rule exposes it to Form Requests, it fails closed on timeouts, and the same Pest contract tests run against every driver. Here is the complete layout:
 
@@ -35,14 +36,17 @@ tests/Feature/Modules/Captcha/ValidCaptchaTest.php
 Related documents: [Architecture](01-architecture.md) for layers and dependency direction, [Laravel Backend](03-laravel-backend.md) for Form Requests and config, [Security](08-security.md) for fail-safe verification, and [Testing](07-testing.md).
 
 <a name="functional-modules"></a>
+
 ## Functional Modules
 
 <a name="functional-modules-principle"></a>
+
 ### Principle
 
 A module groups everything that belongs to one functional capability under `app/Modules/<Name>`, with the namespace `App\Modules\<Name>`: its contract, implementations, actions, rules, provider and config. Laravel's default type-based layout (`app/Models`, `app/Http/Controllers`, ...) remains the right place for code that has not earned a module.
 
 <a name="functional-modules-why-it-exists"></a>
+
 ### Why It Exists
 
 A provider integration spread across `app/Services/TurnstileService.php`, `app/Rules/Captcha.php`, `app/Support/CaptchaHelper.php` and `AppServiceProvider` has no visible boundary. Nobody can tell which files belong together, which ones other code may call, or what to delete when the provider is replaced. Grouping by function makes ownership, the public surface and dead code visible.
@@ -50,6 +54,7 @@ A provider integration spread across `app/Services/TurnstileService.php`, `app/R
 **Why `app/Modules` and not `app/Domain`:** "Domain" suggests Domain-Driven Design (aggregates, bounded contexts, ubiquitous language), which this project does not apply by default (see [Modules Are Not Bounded Contexts](#bounded-contexts)). `app/Modules` is neutral. It sits under the existing `App\` PSR-4 root, so `composer.json` does not change, and it does not collide with Laravel's generated folders.
 
 <a name="functional-modules-when-to-apply"></a>
+
 ### When To Apply
 
 Create a module when **two or more** of these are true:
@@ -61,6 +66,7 @@ Create a module when **two or more** of these are true:
 - **Ownership:** a person or team is accountable for it as a unit.
 
 <a name="functional-modules-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - CRUD features made of a model, a controller, a Form Request and a policy. Laravel's default folders fit them perfectly, and this covers most of the current app (`Team`, `Book`, `Invoice`).
@@ -69,6 +75,7 @@ Create a module when **two or more** of these are true:
 - Do not move existing code into modules just for symmetry. Migrate a feature when you are already changing it substantially.
 
 <a name="functional-modules-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -85,6 +92,7 @@ return [
 The module registers itself through its own service provider. Nothing outside `app/Modules/Captcha` and `config/captcha.php` needs to know which drivers exist.
 
 <a name="functional-modules-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```text
@@ -98,6 +106,7 @@ app/Modules/
 This moves a plain CRUD feature into a module with no variability, no integration and no extra cohesion. It recreates Laravel's default folders one level deeper, breaks `make:*` generator defaults and policy auto-discovery, and gives no boundary in return.
 
 <a name="functional-modules-checklist"></a>
+
 ### Checklist
 
 - [ ] The pull request names at least two module criteria (cohesion, variability, integration, reuse, ownership).
@@ -107,19 +116,23 @@ This moves a plain CRUD feature into a module with no variability, no integratio
 - [ ] Its tests are grouped under `tests/Feature/Modules/<Name>` (or `tests/Unit/Modules/<Name>`).
 
 <a name="bounded-contexts"></a>
+
 ## Modules Are Not Bounded Contexts
 
 <a name="bounded-contexts-principle"></a>
+
 ### Principle
 
 A module is a code-organization boundary. A DDD bounded context is a model boundary, where the same term can mean different things and data is owned and translated at the edges. Do not apply DDD tactical patterns (aggregates, value objects everywhere, domain events, anti-corruption layers) unless the business complexity of that area really needs them.
 
 <a name="bounded-contexts-why-it-exists"></a>
+
 ### Why It Exists
 
 Teams that treat every folder as a bounded context end up duplicating models (`Billing\Customer`, `Support\Customer`, `Teams\Member` all mapping `users`), writing translators between them, and wrapping Eloquent in aggregates. For a CRUD-heavy Laravel app that is pure overhead. It slows changes down and introduces mapping bugs, all without a real language conflict to justify it.
 
 <a name="bounded-contexts-when-to-apply"></a>
+
 ### When To Apply
 
 Treat an area as a bounded context, with its own models and explicit translation, only when:
@@ -129,6 +142,7 @@ Treat an area as a bounded context, with its own models and explicit translation
 - The area is a realistic extraction candidate (see [Modular Monolith Over Microservices](01-architecture.md#modular-monolith)).
 
 <a name="bounded-contexts-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Technical modules like CAPTCHA, payments adapters or notification channels. They have no business language of their own. They are capabilities.
@@ -136,6 +150,7 @@ Treat an area as a bounded context, with its own models and explicit translation
 - When "DDD" is proposed as a style rather than as a fix for a demonstrated modeling problem.
 
 <a name="bounded-contexts-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -158,6 +173,7 @@ final readonly class CaptchaResult
 The CAPTCHA module is a capability module. It returns one small immutable result type and has no aggregates, repositories or domain events, because there is no business model to protect.
 
 <a name="bounded-contexts-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -177,6 +193,7 @@ final class CaptchaChallengeAggregate
 This applies DDD vocabulary to a stateless HTTP check. It adds ports, an aggregate, value objects and domain events with no invariant to protect. The result is harder to read than an `if` statement.
 
 <a name="bounded-contexts-checklist"></a>
+
 ### Checklist
 
 - [ ] The module has no duplicated Eloquent models for the same table without a documented language conflict.
@@ -185,25 +202,30 @@ This applies DDD vocabulary to a stateless HTTP check. It adds ports, an aggrega
 - [ ] Any bounded-context decision is recorded with the conflict that motivated it.
 
 <a name="public-surface"></a>
+
 ## Public Surface and Internals
 
 <a name="public-surface-principle"></a>
+
 ### Principle
 
 Each module exposes a small, intentional public surface. For CAPTCHA that is the `Captcha` contract, `CaptchaResult`, `CaptchaOutcome`, the `ValidCaptcha` rule, the service provider, and `FakeCaptcha` for tests. Everything else, in particular `Drivers/*`, is internal and must not be referenced from outside the module.
 
 <a name="public-surface-why-it-exists"></a>
+
 ### Why It Exists
 
 If a Form Request does `new TurnstileCaptcha(...)` directly, switching to hCaptcha means editing every form. That also bypasses the configured timeout and failure handling. A narrow public surface lets the module change its internals (add a driver, change an endpoint, add retries) without touching consumers.
 
 <a name="public-surface-when-to-apply"></a>
+
 ### When To Apply
 
 - Every module. Decide what is public before writing consumers.
 - Whenever a second feature starts using the module. That is when accidental coupling to internals usually happens.
 
 <a name="public-surface-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - PHP has no package-private visibility, and enforcing "internal" through `@internal` tags alone is weak. Do not build elaborate facades or proxy classes to hide internals. Use the folder convention plus an architecture test.
@@ -211,6 +233,7 @@ If a Form Request does `new TurnstileCaptcha(...)` directly, switching to hCaptc
 - Do not wrap the module's single public contract in a second "API" facade class. The contract is the API.
 
 <a name="public-surface-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -266,6 +289,7 @@ public function rules(): array
 Consumers only know `ValidCaptcha`. The rule depends only on the contract. The token is never logged, and an unavailable provider is a validation failure, not a pass.
 
 <a name="public-surface-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -286,6 +310,7 @@ public function rules(): array
 This hard-codes one driver and reads `env()` outside config, which breaks under `config:cache`. It picks its own 30-second timeout, so a slow provider ties up PHP workers, and it duplicates logic every other form will copy.
 
 <a name="public-surface-checklist"></a>
+
 ### Checklist
 
 - [ ] The module's public classes are listed in the module's provider docblock or this document.
@@ -295,19 +320,23 @@ This hard-codes one driver and reads `env()` outside config, which breaks under 
 - [ ] Secrets and tokens are never logged by public or internal classes.
 
 <a name="provider-adapters"></a>
+
 ## Contracts and Provider Adapters
 
 <a name="provider-adapters-principle"></a>
+
 ### Principle
 
 Define the contract from the consumer's point of view: what it needs to know, not what a vendor returns. Each provider gets one adapter that implements the contract and keeps everything provider-specific inside it: endpoint, parameter names, response format, error codes and timeouts.
 
 <a name="provider-adapters-why-it-exists"></a>
+
 ### Why It Exists
 
 Turnstile and hCaptcha both return `{"success": bool, "error-codes": [...]}` today, but their endpoints, optional parameters and error codes differ. If consumers read `error-codes` directly, the vendor's format becomes part of your application. A consumer-shaped contract (`verify(token, ip): CaptchaResult`) with a three-state outcome lets the caller handle "rejected" and "provider down" differently. A boolean cannot express that difference, and a boolean is exactly how silent fail-open bugs happen.
 
 <a name="provider-adapters-when-to-apply"></a>
+
 ### When To Apply
 
 - Two or more providers are supported now, or a switch is planned with a date.
@@ -315,12 +344,14 @@ Turnstile and hCaptcha both return `{"success": bool, "error-codes": [...]}` tod
 - The provider's failure modes (timeout, 5xx, malformed body) need a uniform treatment.
 
 <a name="provider-adapters-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - One provider and no realistic second one. Write a single client class and test it with `Http::fake()`. Introduce the contract when the second provider shows up, which is a mechanical refactor.
 - Do not mirror the vendor's full API in the contract. Expose only what consumers use. `verify()` is enough. There is no need for `getSiteKey()`, `getStats()` or other methods "for completeness."
 
 <a name="provider-adapters-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -392,6 +423,7 @@ class TurnstileCaptcha implements Captcha
 `HCaptcha` is identical apart from `ENDPOINT = 'https://api.hcaptcha.com/siteverify'` and the `hcaptcha:` reason prefix. Both handle connection errors, non-2xx responses and malformed bodies as `Unavailable`. Only an explicit `"success": true` is a pass.
 
 <a name="provider-adapters-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -414,6 +446,7 @@ class TurnstileCaptcha implements Captcha
 The boolean contract cannot tell "rejected" from "unavailable." The `?? true` silently turns every outage, or any attacker-induced malformed response, into a pass. There is no timeout beyond the client default, so a hung provider holds a PHP worker for up to 30 seconds per request.
 
 <a name="provider-adapters-checklist"></a>
+
 ### Checklist
 
 - [ ] The contract method signature is consumer-shaped and returns a result type, not a vendor array or a bare `bool`.
@@ -424,25 +457,30 @@ The boolean contract cannot tell "rejected" from "unavailable." The `?? true` si
 - [ ] Vendor-specific endpoints and field names do not appear outside the adapter.
 
 <a name="configuration-binding"></a>
+
 ## Binding Through Configuration
 
 <a name="configuration-binding-principle"></a>
+
 ### Principle
 
 The active implementation is chosen by a config value (`captcha.driver`) and bound to the contract in the module's service provider. `env()` is read only in `config/captcha.php`. An unknown driver or missing secret is a boot-time error, never a silent fallback.
 
 <a name="configuration-binding-why-it-exists"></a>
+
 ### Why It Exists
 
 Choosing the implementation with `if (app()->environment('local'))` scattered through the code makes production behavior impossible to reason about. Reading `env()` outside config returns `null` once `php artisan config:cache` has run in production. A missing secret that becomes an empty string makes every verification fail with a vague provider error, or worse, it gets "handled" with a pass-through. One binding point driven by config makes the selection explicit and testable.
 
 <a name="configuration-binding-when-to-apply"></a>
+
 ### When To Apply
 
 - Every contract with more than one implementation.
 - Any implementation that needs secrets, URLs or timeouts.
 
 <a name="configuration-binding-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - A single implementation with no constructor configuration. The container auto-resolves concrete classes, so no binding is needed.
@@ -450,6 +488,7 @@ Choosing the implementation with `if (app()->environment('local'))` scattered th
 - The `#[Bind]` container attribute (Laravel 12+) binds an interface to one concrete class per environment. It cannot read a config value, so it does not fit config-selected drivers. Use the service provider.
 
 <a name="configuration-binding-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -501,6 +540,7 @@ class CaptchaServiceProvider extends ServiceProvider
 A singleton is safe because the drivers are stateless. The binding is resolved lazily, so a misconfiguration fails on the first protected request and in the contract tests, not silently.
 
 <a name="configuration-binding-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -520,6 +560,7 @@ $this->app->bind(Captcha::class, function () {
 `env()` returns `null` under cached config, so the `default` branch is taken and **every CAPTCHA passes in production**. The empty-string secret hides misconfiguration, and the 30-second timeout ties up workers.
 
 <a name="configuration-binding-checklist"></a>
+
 ### Checklist
 
 - [ ] `config/<module>.php` holds driver, timeouts and secrets. `env()` appears nowhere else.
@@ -530,31 +571,37 @@ $this->app->bind(Captcha::class, function () {
 - [ ] The app still boots with `php artisan config:cache`.
 
 <a name="failing-closed"></a>
+
 ## Failing Closed
 
 <a name="failing-closed-principle"></a>
+
 ### Principle
 
 When a security-critical verification cannot be completed because of a timeout, a 5xx, a malformed response or a missing configuration, the request is **denied** with a retryable message, and the event is logged without sensitive data. A verification never passes because the verifier was unavailable.
 
 <a name="failing-closed-why-it-exists"></a>
+
 ### Why It Exists
 
 Attackers can cause or wait for verifier failures: they can flood the provider, block its domain at the network level, or send oversized tokens that cause errors. A fail-open CAPTCHA becomes "no CAPTCHA" exactly when bots are most active. Failing closed costs some legitimate users a retry during an outage. That trade-off is explicit and visible in logs and alerts.
 
 <a name="failing-closed-when-to-apply"></a>
+
 ### When To Apply
 
 - CAPTCHA, webhook signature checks, payment confirmations, fraud and risk scores, licence checks, and any verification that guards a state change.
 - Any adapter whose result is used as an authorization or anti-abuse signal.
 
 <a name="failing-closed-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Non-security enrichments: geo-IP lookups for display, avatar fetches, analytics. Degrade gracefully and render without them.
 - When the business explicitly accepts fail-open for availability (for example a risk score that only adds a review flag). Write the decision down, make it a visible config switch that defaults to closed, log every fail-open event, and alert on its rate. Never make it an implicit `?? true`.
 
 <a name="failing-closed-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -570,6 +617,7 @@ CaptchaOutcome::Unavailable => $this->failClosed($fail, $result->reason),
 Timeouts (`ConnectionException`) and bad responses become `Unavailable`. The rule turns that into a validation error with a retryable message and a `captcha.unavailable` log entry that contains no token.
 
 <a name="failing-closed-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -585,6 +633,7 @@ try {
 The early `return` without calling `$fail()` makes the field valid. Every outage, and every input that makes the adapter throw, bypasses the CAPTCHA.
 
 <a name="failing-closed-checklist"></a>
+
 ### Checklist
 
 - [ ] Every code path that cannot confirm success ends in a denial (`$fail()`, `403`, `422`), never an early `return`.
@@ -594,25 +643,30 @@ The early `return` without calling `$fail()` makes the field valid. Every outage
 - [ ] A test proves that a connection failure produces a validation error.
 
 <a name="contract-tests"></a>
+
 ## Contract Tests and Fakes
 
 <a name="contract-tests-principle"></a>
+
 ### Principle
 
 One Pest test file defines the contract's behavior and runs it against **every** real implementation through a dataset, using `Http::fake()` so that no network is involved. Consumers of the contract are tested with `FakeCaptcha`, a deterministic in-memory implementation that the module ships for tests.
 
 <a name="contract-tests-why-it-exists"></a>
+
 ### Why It Exists
 
 Interchangeable implementations drift: one driver treats a 500 as a rejection, another as a pass. A shared contract test makes "interchangeable" a verified property instead of an assumption. A shipped fake keeps feature tests fast and deterministic, and stops each test file from inventing its own mock with slightly different semantics.
 
 <a name="contract-tests-when-to-apply"></a>
+
 ### When To Apply
 
 - Every contract with two or more implementations: run the contract tests per driver.
 - Every consumer of a network-bound contract: use the fake.
 
 <a name="contract-tests-when-not-to-apply"></a>
+
 ### When Not To Apply
 
 - Do not hit the real provider in the default suite. Live smoke tests, if any, belong in a separate, opt-in group run with real test keys.
@@ -620,6 +674,7 @@ Interchangeable implementations drift: one driver treats a 500 as a rejection, a
 - Do not ship the fake as a configurable driver. It is bound only from tests with `$this->app->instance()`.
 
 <a name="contract-tests-correct-example"></a>
+
 ### Correct Example
 
 ```php
@@ -707,6 +762,7 @@ it('blocks registration when the captcha provider is unavailable', function () {
 The consumer test proves the fail-closed behavior end to end without HTTP stubs, because the adapters' HTTP mapping is already covered by the contract tests.
 
 <a name="contract-tests-anti-pattern"></a>
+
 ### Anti-Pattern
 
 ```php
@@ -721,6 +777,7 @@ it('verifies captcha', function () {
 This mocks the concrete driver, which consumers do not even resolve, so the test may pass while hitting the real binding. It only covers the happy path, and it does not test `HCaptcha` at all. Nothing proves that the drivers behave the same on timeouts.
 
 <a name="contract-tests-checklist"></a>
+
 ### Checklist
 
 - [ ] One contract test file runs against every driver through a Pest dataset.

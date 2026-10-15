@@ -6,13 +6,15 @@
 - [Lifecycle](#lifecycle)
 
 <a name="introduction"></a>
+
 ## Introduction
 
 An Architecture Decision Record (ADR) captures one consequential technical decision: the context, the options considered, the choice and its consequences. ADRs explain *why* the code looks the way it does long after the pull request discussion is forgotten.
 
-The [engineering principles](../00-principles.md) describe defaults. An ADR records a deliberate choice, including any deliberate deviation from those defaults.
+The [engineering principles](00-principles.md) describe defaults. An ADR records a deliberate choice, including any deliberate deviation from those defaults.
 
 <a name="when-to-write-a-decision-record"></a>
+
 ## When To Write A Decision Record
 
 Write an ADR when a decision is expensive to reverse or will surprise a future reader, for example:
@@ -21,22 +23,20 @@ Write an ADR when a decision is expensive to reverse or will surprise a future r
 - Choosing a database strategy for consistency (locking, idempotency, queueing) on a critical flow.
 - Versioning or breaking a public API contract.
 - Adding a significant dependency or infrastructure component (cache, queue backend, search engine).
-- Deviating from a rule in `docs/engineering/` for a specific, justified reason.
+- Deviating from a rule in these engineering standards for a specific, justified reason.
 
 Do not write an ADR for choices that are easily reversed or already dictated by the standards.
 
 <a name="writing-a-decision-record"></a>
+
 ## Writing A Decision Record
 
-Copy [`0000-template.md`](0000-template.md) to the next number with a short kebab-case title:
-
-```shell
-cp docs/engineering/decisions/0000-template.md docs/engineering/decisions/0001-captcha-provider-contract.md
-```
+Copy [the template](decision-template.md) into the project's `docs/decisions/` directory (create it if missing), named with the next number and a short kebab-case title, for example `docs/decisions/0001-captcha-provider-contract.md`.
 
 Keep it to one page. Link the pull request that implements it, and link the ADR from the code or document it affects when the decision would otherwise be surprising.
 
 <a name="lifecycle"></a>
+
 ## Lifecycle
 
 | Status | Meaning |
