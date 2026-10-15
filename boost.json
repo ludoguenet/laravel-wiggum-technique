@@ -6,9 +6,6 @@
     "guidelines": true,
     "mcp": true,
     "nightwatch": false,
-    "packages": [
-        "mrpunyapal/laravel-auditor"
-    ],
     "sail": false,
     "skills": [
         "infer-conventions",
@@ -16,15 +13,6 @@
         "laravel-best-practices",
         "testing-best-practices",
         "tailwindcss-development",
-        "laravel-audit",
-        "laravel-audit-architecture",
-        "laravel-audit-conventions",
-        "laravel-audit-database",
-        "laravel-audit-dsa",
-        "laravel-audit-performance",
-        "laravel-audit-security",
-        "laravel-audit-testing",
-        "laravel-auditor-development",
         "add-interchangeable-provider"
     ]
 }
